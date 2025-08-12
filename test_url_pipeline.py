@@ -108,7 +108,7 @@ class BrandGPTURLTester:
             "url": self.test_url,
             "session_id": self.session_id,
             "content_type": "url",
-            "max_depth": 1  # Only scrape the main page
+            "max_depth": 1  # Only scrape the main page (depth=1 means just the provided URL)
         }
         
         response = self.session.post(
@@ -278,6 +278,86 @@ class BrandGPTURLTester:
         
         return results
     
+    def test_depth_parameters(self):
+        """Test different depth parameter values"""
+        self.print_step("7", "Testing Different Depth Parameters")
+        
+        depth_tests = [
+            {"depth": 1, "description": "Only the main page (depth=1)"},
+            {"depth": 2, "description": "Main page + linked pages (depth=2)"},
+            {"depth": 3, "description": "Main page + linked pages + their links (depth=3)"}
+        ]
+        
+        for test in depth_tests:
+            print(f"\n🔍 Testing depth={test['depth']}: {test['description']}")
+            
+            # Create a new session for each depth test
+            test_session_data = {
+                "system_prompt": f"Analyzing content scraped at depth {test['depth']}"
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/sessions",
+                json=test_session_data
+            )
+            
+            if response.status_code != 200:
+                print(f"❌ Failed to create test session for depth {test['depth']}")
+                continue
+                
+            test_session_id = response.json()["id"]
+            print(f"📝 Created test session: {test_session_id}")
+            
+            # Test URL ingestion with specific depth
+            url_data = {
+                "url": "https://en.wikipedia.org/wiki/Artificial_intelligence",  # Smaller page for testing
+                "session_id": test_session_id,
+                "content_type": "url",
+                "max_depth": test['depth']
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/ingest/url",
+                json=url_data
+            )
+            
+            if response.status_code == 200:
+                test_doc_id = response.json()["document_id"]
+                print(f"✅ Started ingestion with depth={test['depth']}, doc_id={test_doc_id}")
+                
+                # Wait a bit for processing (shorter wait for demo)
+                print("⏳ Waiting for processing...")
+                time.sleep(10)
+                
+                # Check how many chunks were created
+                query_data = {
+                    "query": "tell me about artificial intelligence",
+                    "session_id": test_session_id,
+                    "use_system_prompt": False
+                }
+                
+                response = self.session.post(
+                    f"{self.base_url}/api/query",
+                    json=query_data
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    sources = result["sources"]
+                    unique_urls = set(source.get('metadata', {}).get('url', '') for source in sources)
+                    print(f"📊 Depth {test['depth']} results: {len(sources)} chunks from {len(unique_urls)} unique URLs")
+                    
+                    # Show some URLs found
+                    if unique_urls:
+                        print("🔗 Sample URLs found:")
+                        for i, url in enumerate(list(unique_urls)[:3]):
+                            if url:
+                                print(f"   {i+1}. {url}")
+                else:
+                    print(f"❌ Query failed for depth {test['depth']}")
+            else:
+                print(f"❌ Ingestion failed for depth {test['depth']}: {response.text}")
+
     def run_full_test(self):
         """Run the complete end-to-end URL ingestion test"""
         print("🚀 BrandGPT End-to-End URL Ingestion Pipeline Test")
@@ -305,8 +385,11 @@ class BrandGPTURLTester:
         # Step 5: Test queries
         results = self.test_queries()
         
+        # Step 6: Test depth parameters
+        self.test_depth_parameters()
+        
         # Final summary
-        self.print_step(6, "Test Results Summary")
+        self.print_step(8, "Test Results Summary")
         successful_queries = sum(1 for r in results if r["success"])
         total_queries = len(results)
         

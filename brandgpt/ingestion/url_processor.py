@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class URLScraper:
-    def __init__(self, max_depth=1):
+    def __init__(self, max_depth=1, max_links_per_page=20):
         self.max_depth = max_depth
+        self.max_links_per_page = max_links_per_page
         self.visited_urls = set()
         self.content = []
         self.session = requests.Session()
@@ -79,31 +80,40 @@ class URLScraper:
         return links
     
     def scrape(self, start_url):
-        """Scrape the URL and optionally follow links"""
-        to_visit = [(start_url, 0)]  # (url, depth)
+        """
+        Scrape the URL and optionally follow links
+        
+        Depth levels:
+        - depth=1: Only scrape the provided URL
+        - depth=2: Scrape the URL + all links it contains (1 level deep)
+        - depth=3: Scrape the URL + links + links from those pages (2 levels deep)
+        - etc.
+        """
+        to_visit = [(start_url, 1)]  # (url, current_depth) - start at depth 1
         
         while to_visit:
-            url, depth = to_visit.pop(0)
+            url, current_depth = to_visit.pop(0)
             
-            if url in self.visited_urls or depth > self.max_depth:
+            if url in self.visited_urls or current_depth > self.max_depth:
                 continue
             
             try:
-                logger.info(f"Scraping URL: {url} (depth: {depth})")
+                logger.info(f"Scraping URL: {url} (depth: {current_depth}/{self.max_depth})")
                 response = self.session.get(url, timeout=10)
                 response.raise_for_status()
                 
                 self.visited_urls.add(url)
                 
                 soup = BeautifulSoup(response.content, 'html.parser')
-                self._extract_text(soup, url, depth)
+                self._extract_text(soup, url, current_depth)
                 
                 # Add links for next depth level (if within limit)
-                if depth < self.max_depth:
+                if current_depth < self.max_depth:
                     links = self._get_links(soup, url)
-                    for link in links[:10]:  # Limit to first 10 links to avoid excessive crawling
+                    # Limit number of links per page to avoid excessive crawling
+                    for link in links[:self.max_links_per_page]:
                         if link not in self.visited_urls:
-                            to_visit.append((link, depth + 1))
+                            to_visit.append((link, current_depth + 1))
                 
                 # Be respectful with delays
                 time.sleep(settings.download_delay)
@@ -125,14 +135,15 @@ class URLProcessor:
         )
         self.executor = ThreadPoolExecutor(max_workers=1)
     
-    def _run_scraper(self, url: str, max_depth: int) -> List[Dict[str, Any]]:
+    def _run_scraper(self, url: str, max_depth: int, max_links_per_page: int = 20) -> List[Dict[str, Any]]:
         """Run the scraper in a thread-safe way"""
-        scraper = URLScraper(max_depth=max_depth)
+        scraper = URLScraper(max_depth=max_depth, max_links_per_page=max_links_per_page)
         return scraper.scrape(url)
     
     async def process(self, url: str, metadata: Dict[str, Any] = None) -> List[LangchainDocument]:
         try:
             max_depth = metadata.get('max_depth', settings.max_scrape_depth) if metadata else settings.max_scrape_depth
+            max_links_per_page = metadata.get('max_links_per_page', settings.max_links_per_page) if metadata else settings.max_links_per_page
             
             # Run scraper in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -140,7 +151,8 @@ class URLProcessor:
                 self.executor,
                 self._run_scraper,
                 url,
-                max_depth
+                max_depth,
+                max_links_per_page
             )
             
             # Convert scraped content to documents
