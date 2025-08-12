@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    network_mode: host
+    environment:
+      - DATABASE_URL=sqlite:///./data/brandgpt.db
+      - QDRANT_URL=http://localhost:6333
+      - OLLAMA_BASE_URL=http://localhost:11434
+      - API_HOST=0.0.0.0
+      - API_PORT=9700
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    network_mode: host
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+    driver: local
