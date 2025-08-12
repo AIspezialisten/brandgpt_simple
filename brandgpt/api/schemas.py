@@ -63,7 +63,12 @@ class DocumentUpload(BaseModel):
     session_id: str
     content_type: str = Field(..., pattern=r"^(pdf|text|url|json)$")
     url: Optional[str] = None
-    max_depth: Optional[int] = Field(None, ge=1, le=10)
+    max_depth: Optional[int] = Field(
+        None, 
+        ge=1, 
+        le=10, 
+        description="Depth parameter for URL scraping. 1=only provided URL, 2=URL + all links it contains, etc. Default is 1."
+    )
 
 
 class QueryRequest(BaseModel):

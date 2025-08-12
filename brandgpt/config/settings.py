@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     algorithm: str = Field(default="HS256", env="ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
     
-    # Scrapy Configuration
-    max_scrape_depth: int = Field(default=3, env="MAX_SCRAPE_DEPTH")
+    # URL Scraping Configuration
+    max_scrape_depth: int = Field(default=1, env="MAX_SCRAPE_DEPTH")
+    max_links_per_page: int = Field(default=20, env="MAX_LINKS_PER_PAGE")
     concurrent_requests: int = Field(default=16, env="CONCURRENT_REQUESTS")
     download_delay: float = Field(default=0.5, env="DOWNLOAD_DELAY")
     
