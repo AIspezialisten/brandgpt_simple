@@ -636,7 +636,7 @@ console.log(`Document ingestion started: ${result.document_id}`);
 - **Auto-detection**: System automatically detects JSON in .txt files
 
 ### URL Ingestion
-Crawls and processes web content with configurable depth.
+Crawls and processes web content with configurable depth for comprehensive knowledge base creation.
 
 **Endpoint:** `POST /api/ingest/url`
 
@@ -651,6 +651,12 @@ Crawls and processes web content with configurable depth.
   "max_depth": 2
 }
 ```
+
+**Depth Parameter Explanation:**
+- `max_depth: 1` - Only scrapes the provided URL (default)
+- `max_depth: 2` - Scrapes the URL + all pages it links to (1 level deep)
+- `max_depth: 3` - Scrapes the URL + linked pages + their linked pages (2 levels deep)
+- Maximum allowed depth: 10 (configurable via `MAX_SCRAPE_DEPTH` environment variable)
 
 **Response:** `200 OK`
 ```json
@@ -677,12 +683,12 @@ response = requests.post(
     headers=headers
 )
 
-# Crawl website with depth
+# Crawl website with depth - comprehensive knowledge base creation
 deep_crawl = {
     "session_id": session_id,
     "content_type": "url", 
     "url": "https://company.com/docs/",
-    "max_depth": 3  # Follow links 3 levels deep
+    "max_depth": 3  # Scrapes: main page + all linked pages + their linked pages
 }
 
 response = requests.post(
@@ -690,6 +696,14 @@ response = requests.post(
     json=deep_crawl,
     headers=headers
 )
+
+# Example: Wikipedia article with related pages
+wikipedia_crawl = {
+    "session_id": session_id,
+    "content_type": "url",
+    "url": "https://en.wikipedia.org/wiki/Machine_Learning",
+    "max_depth": 2  # Gets main article + all Wikipedia pages it references
+}
 ```
 
 **JavaScript Example:**
@@ -712,10 +726,12 @@ console.log(`URL crawling started: ${result.document_id}`);
 ```
 
 **URL Processing Features:**
-- **Smart Crawling**: Follows internal links up to specified depth
-- **Content Extraction**: Removes navigation, ads, and boilerplate
-- **Multiple Pages**: Each page becomes a searchable document
-- **Rate Limiting**: Respects robots.txt and implements delays
+- **Configurable Depth Crawling**: Control how many levels of links to follow (1-10 levels)
+- **Same-Domain Restriction**: Only follows links within the same domain for security
+- **Smart Content Extraction**: Removes navigation, ads, and boilerplate content
+- **Multi-Page Processing**: Each discovered page becomes a separate searchable document
+- **Rate Limiting**: Implements delays between requests (configurable via `DOWNLOAD_DELAY`)
+- **Link Limitation**: Configurable maximum links per page (default: 20) to prevent excessive crawling
 
 ### Check Document Status
 Monitor the processing status of ingested documents.
