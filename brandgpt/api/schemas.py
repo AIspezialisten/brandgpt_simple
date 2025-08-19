@@ -25,6 +25,11 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class ApiKeyResponse(BaseModel):
+    api_key: str
+    message: str
+
+
 class SessionCreate(BaseModel):
     prompt_id: Optional[int] = None
     system_prompt: Optional[str] = None
@@ -75,6 +80,7 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
     session_id: Optional[str] = None
     use_system_prompt: bool = True
+    group_id: Optional[str] = Field(None, description="Filter results by group_id")
 
 
 class QueryResponse(BaseModel):
@@ -87,3 +93,19 @@ class IngestionStatus(BaseModel):
     document_id: int
     status: str
     message: Optional[str] = None
+
+
+class StructuredDataIngestion(BaseModel):
+    """Schema for structured data ingestion (v1 API compatibility)."""
+    data: Any = Field(..., description="Structured data (object or array of objects)")
+    session_id: Optional[str] = Field(None, description="Session ID for scoping (optional)")
+    group_id: Optional[str] = Field(None, description="Group ID for organizing content")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+
+class StructuredDataResponse(BaseModel):
+    """Response for structured data ingestion."""
+    document_id: int
+    status: str
+    items_processed: int
+    message: str

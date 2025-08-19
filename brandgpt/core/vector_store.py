@@ -81,6 +81,7 @@ class VectorStore:
         self,
         query: str,
         user_id: Optional[int] = None,
+        group_id: Optional[str] = None,
         limit: int = 20,
         score_threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
@@ -88,12 +89,16 @@ class VectorStore:
             query_embedding = await self.embedding_service.embed_query(query)
             
             filter_conditions = None
+            must_conditions = []
+            
             if user_id:
-                filter_conditions = {
-                    "must": [
-                        {"key": "user_id", "match": {"value": user_id}}
-                    ]
-                }
+                must_conditions.append({"key": "user_id", "match": {"value": user_id}})
+            
+            if group_id:
+                must_conditions.append({"key": "group_id", "match": {"value": group_id}})
+            
+            if must_conditions:
+                filter_conditions = {"must": must_conditions}
             
             results = self.client.search(
                 collection_name=self.collection_name,

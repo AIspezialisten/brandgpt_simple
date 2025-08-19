@@ -99,6 +99,31 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@app.post("/api/auth/api-key", response_model=schemas.ApiKeyResponse)
+async def generate_api_key(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate or regenerate API key for server-to-server authentication."""
+    # Generate new API key
+    api_key = User.generate_api_key()
+    
+    # Update user with new API key
+    current_user.api_key = api_key
+    db.commit()
+    
+    return {
+        "api_key": api_key,
+        "message": "API key generated successfully. Store it securely - it won't be shown again."
+    }
+
+
+@app.get("/api/auth/me", response_model=schemas.UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Get current user info (works with both JWT and API key)."""
+    return current_user
+
+
 # Session endpoints
 @app.post("/api/sessions", response_model=schemas.SessionResponse)
 async def create_session(
@@ -262,6 +287,130 @@ async def ingest_url(
         status="processing",
         message="URL ingestion started"
     )
+
+
+@app.post("/api/ingest/structured", response_model=schemas.StructuredDataResponse)
+async def ingest_structured_data(
+    data: schemas.StructuredDataIngestion,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ingest structured data (JSON objects/arrays) with preserved structure.
+    Backward compatible with v1 API /v1/ingest-structured endpoint.
+    
+    Supports:
+    - Single objects or arrays of objects
+    - Group IDs for content organization
+    - Original structure preservation for retrieval
+    - Searchable text generation for RAG
+    """
+    from brandgpt.ingestion.structured_processor import StructuredDataProcessor
+    
+    # If session_id is provided, verify it belongs to user
+    session_id = data.session_id
+    if session_id:
+        session = db.query(DBSession).filter(
+            DBSession.id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+    
+    # Create document record with group_id support
+    doc_metadata = {
+        "content_type": "structured",
+        "group_id": data.group_id,
+        **(data.metadata or {})
+    }
+    
+    document = Document(
+        session_id=session_id,
+        content_type="structured",
+        doc_metadata=doc_metadata
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    
+    # Process structured data
+    processor = StructuredDataProcessor()
+    
+    # Count items for response
+    items_count = len(data.data) if isinstance(data.data, list) else 1
+    
+    # Process in background for better performance
+    background_tasks.add_task(
+        process_structured_data_task,
+        processor,
+        data.data,
+        document.id,
+        session_id,
+        current_user.id,
+        data.group_id,
+        db
+    )
+    
+    return schemas.StructuredDataResponse(
+        document_id=document.id,
+        status="processing",
+        items_processed=items_count,
+        message=f"Processing {items_count} structured items"
+    )
+
+
+async def process_structured_data_task(
+    processor,
+    data: Any,
+    document_id: int,
+    session_id: Optional[str],
+    user_id: int,
+    group_id: Optional[str],
+    db: Session
+):
+    """Background task to process structured data."""
+    try:
+        # Process data
+        metadata = {
+            "document_id": document_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "group_id": group_id
+        }
+        
+        documents = processor.process(data, metadata)
+        
+        if documents:
+            # Store in vector database
+            await vector_store.add_documents(documents)
+            
+            # Update document status
+            doc = db.query(Document).filter(Document.id == document_id).first()
+            if doc:
+                doc.status = "completed"
+                doc.doc_metadata = {
+                    **doc.doc_metadata,
+                    "chunks_created": len(documents)
+                }
+                db.commit()
+                
+            logger.info(f"Structured data ingestion completed: {len(documents)} chunks")
+        else:
+            logger.error("No documents generated from structured data")
+            
+    except Exception as e:
+        logger.error(f"Error processing structured data: {str(e)}")
+        # Update document status to failed
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if doc:
+            doc.status = "failed"
+            doc.doc_metadata = {**doc.doc_metadata, "error": str(e)}
+            db.commit()
 
 
 # Query endpoint

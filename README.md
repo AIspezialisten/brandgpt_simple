@@ -7,6 +7,8 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://docker.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
+> **📢 Migrating from v1?** See our comprehensive [Migration Guide](docs/MIGRATION_GUIDE_V1.md) for smooth transition to v2 with enhanced features including dual authentication (JWT + API keys) and structured data support.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -63,14 +65,21 @@ docker-compose up -d
 
 ## 🎯 Key Features
 
+### 🔐 **Dual Authentication System**
+- **JWT Tokens**: Secure authentication for web applications
+- **API Keys**: Simple authentication for server-to-server communication
+- **Backward Compatible**: Support for v1 API patterns with enhanced security
+
 ### 📄 **Multi-Format Document Ingestion**
 - **PDF Documents**: Extract text, tables, and metadata
-- **Web URLs**: Crawl and scrape with configurable depth
+- **Web URLs**: Crawl and scrape with configurable depth (1-10 levels)
+- **Structured Data**: Preserve original JSON structure while enabling RAG
 - **JSON Data**: Smart processing with natural language conversion
 - **Text Files**: Direct text processing with automatic chunking
 
 ### 👤 **User-Scoped Content Management**
 - **Private Content**: Each user's documents are isolated and secure
+- **Group Organization**: Optional group_id for content categorization
 - **Cross-Session Access**: Access your content from any session
 - **Persistent Storage**: Documents remain available across app restarts
 
@@ -80,7 +89,7 @@ docker-compose up -d
 - **Consistent Behavior**: Same persona maintains consistent responses
 
 ### 🔄 **Advanced RAG Pipeline**
-- **Intelligent Retrieval**: Vector similarity search with user filtering
+- **Intelligent Retrieval**: Vector similarity search with user and group filtering
 - **Result Reranking**: Improve relevance with cross-encoder models
 - **Context Generation**: Smart context preparation for LLM
 - **Response Generation**: High-quality responses with source attribution
