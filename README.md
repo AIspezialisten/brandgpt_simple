@@ -150,12 +150,24 @@ graph TB
 
 ### How Authentication Works
 
-The BrandGPT API uses **JWT (JSON Web Tokens)** for stateless authentication:
+The BrandGPT API supports **dual authentication** for different use cases:
 
+#### **Option 1: JWT Tokens (Web Applications)**
 1. **User Registration**: Create account with username, email, password
 2. **Login**: Exchange credentials for JWT access token
-3. **Token Usage**: Include token in `Authorization` header for protected endpoints
-4. **User Isolation**: All content is automatically scoped to the authenticated user
+3. **Token Usage**: Include token in `Authorization: Bearer <jwt_token>` header
+4. **Best For**: Web applications, interactive sessions
+
+#### **Option 2: API Keys (Server-to-Server)**
+1. **User Registration**: Create account (one-time setup)
+2. **Generate API Key**: Use JWT to generate persistent API key
+3. **Key Usage**: Include key in `Authorization: Bearer <api_key>` header  
+4. **Best For**: Server integrations, automation, v1 API compatibility
+
+Both methods provide:
+- **User Isolation**: All content is automatically scoped to the authenticated user
+- **Same Access**: Identical permissions and content access
+- **Security**: Secure token validation and user identification
 
 ### Authentication Workflow
 
@@ -285,6 +297,38 @@ access_token = token_data["access_token"]
 
 # Use token for subsequent requests
 headers = {"Authorization": f"Bearer {access_token}"}
+```
+
+#### Generate API Key
+Generate a persistent API key for server-to-server authentication (v1 compatibility).
+
+**Endpoint:** `POST /api/auth/api-key`
+
+**Authentication:** Required (JWT)
+
+**Response:** `200 OK`
+```json
+{
+  "api_key": "bgpt_2m3SQzl-WxbcGdW8N9P4rT6vY8zA1B3cD5e",
+  "message": "API key generated successfully. Store it securely - it won't be shown again."
+}
+```
+
+**Python Example:**
+```python
+# Generate API key using JWT token
+response = requests.post(
+    "http://localhost:9700/api/auth/api-key",
+    headers={"Authorization": f"Bearer {jwt_token}"}
+)
+
+api_key_data = response.json()
+api_key = api_key_data["api_key"]  # Save this securely!
+
+# Use API key for all future requests (v1-style)
+headers = {"Authorization": f"Bearer {api_key}"}
+# Or without Bearer prefix:
+headers = {"Authorization": api_key}
 ```
 
 **JavaScript Example:**
@@ -742,6 +786,119 @@ console.log(`URL crawling started: ${result.document_id}`);
 - **Rate Limiting**: Implements delays between requests (configurable via `DOWNLOAD_DELAY`)
 - **Link Limitation**: Configurable maximum links per page (default: 20) to prevent excessive crawling
 
+### Structured Data Ingestion
+Ingest JSON objects/arrays while preserving original structure for RAG (v1 API compatibility).
+
+**Endpoint:** `POST /api/ingest/structured`
+
+**Authentication:** Required
+
+**Request Body:**
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "Product A",
+    "price": 99.99,
+    "features": ["wireless", "noise-cancelling"]
+  },
+  "group_id": "products_2024",
+  "session_id": "abc123-def456-ghi789",
+  "metadata": {
+    "source": "product_catalog",
+    "version": "2024.1"
+  }
+}
+```
+
+**For Arrays:**
+```json
+{
+  "data": [
+    {"id": 1, "name": "Product A", "price": 99.99},
+    {"id": 2, "name": "Product B", "price": 149.99}
+  ],
+  "group_id": "products_2024"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "document_id": 456,
+  "status": "processing",
+  "items_processed": 2,
+  "message": "Processing 2 structured items"
+}
+```
+
+**Python Example:**
+```python
+# Single object ingestion
+structured_data = {
+    "data": {
+        "company": "TechCorp",
+        "departments": [
+            {"name": "Engineering", "employees": 50},
+            {"name": "Sales", "employees": 30}
+        ]
+    },
+    "group_id": "company_data",
+    "metadata": {"source": "hr_system"}
+}
+
+response = requests.post(
+    "http://localhost:9700/api/ingest/structured",
+    json=structured_data,
+    headers=headers
+)
+
+# Array of objects (v1-style)
+products_data = {
+    "data": [
+        {"id": 1, "name": "Laptop", "price": 999},
+        {"id": 2, "name": "Mouse", "price": 29}
+    ],
+    "group_id": "inventory_2024"
+}
+
+response = requests.post(
+    "http://localhost:9700/api/ingest/structured",
+    json=products_data,
+    headers=headers
+)
+```
+
+**JavaScript Example:**
+```javascript
+const structuredData = {
+    data: {
+        project: "Website Redesign",
+        tasks: [
+            {name: "UI Design", status: "completed"},
+            {name: "Backend API", status: "in_progress"}
+        ]
+    },
+    group_id: "projects_2024"
+};
+
+const response = await fetch('http://localhost:9700/api/ingest/structured', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(structuredData)
+});
+
+const result = await response.json();
+console.log(`Structured data ingestion started: ${result.document_id}`);
+```
+
+**Structured Data Features:**
+- **Original Structure Preserved**: JSON structure maintained for precise retrieval
+- **Natural Language Conversion**: Automatically generates searchable text for RAG
+- **Group Organization**: Content categorization via group_id (v1 compatibility)
+- **Flexible Input**: Supports single objects or arrays of objects
+- **Background Processing**: Asynchronous processing for optimal performance
+
 ### Check Document Status
 Monitor the processing status of ingested documents.
 
@@ -819,9 +976,16 @@ Search your documents and get AI-generated responses with source attribution.
 {
   "query": "What are the main business opportunities mentioned in the reports?",
   "session_id": "abc123-def456-ghi789",
-  "use_system_prompt": true
+  "use_system_prompt": true,
+  "group_id": "business_reports_2024"
 }
 ```
+
+**Parameters:**
+- `query` (string): Your question or search query
+- `session_id` (string, optional): Session ID for conversation context
+- `use_system_prompt` (boolean): Whether to use session's AI persona (default: true)
+- `group_id` (string, optional): Filter results by group ID for content organization (v1 compatibility)
 
 **Response:** `200 OK`
 ```json
@@ -884,6 +1048,33 @@ general_query = {
 response = requests.post(
     "http://localhost:9700/api/query",
     json=general_query,
+    headers=headers
+)
+
+# Query specific group content (v1 compatibility)
+group_query = {
+    "query": "List all products and their prices",
+    "group_id": "products_2024",  # Only search within this group
+    "use_system_prompt": False
+}
+
+response = requests.post(
+    "http://localhost:9700/api/query",
+    json=group_query,
+    headers=headers
+)
+
+# Query combining session persona with group filtering
+persona_group_query = {
+    "query": "Analyze the technical risks in this project",
+    "session_id": session_id,
+    "group_id": "project_alpha",
+    "use_system_prompt": True  # Use AI persona + filter by group
+}
+
+response = requests.post(
+    "http://localhost:9700/api/query",
+    json=persona_group_query,
     headers=headers
 )
 ```

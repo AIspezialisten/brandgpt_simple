@@ -8,7 +8,7 @@ class Document(Base):
     __tablename__ = "documents"
     
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=True)  # Nullable for user-scoped content
     filename = Column(String, nullable=True)
     url = Column(String, nullable=True)
     content_type = Column(String, nullable=False)  # pdf, text, url, json
