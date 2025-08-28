@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, B
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Annotated
 import uuid
 import logging
 from datetime import timedelta
@@ -101,15 +101,24 @@ async def login(
 
 @app.post("/api/auth/api-key", response_model=schemas.ApiKeyResponse)
 async def generate_api_key(
-    current_user: User = Depends(get_current_user),
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Session = Depends(get_db)
 ):
-    """Generate or regenerate API key for server-to-server authentication."""
+    """Generate API key directly with username/password (no JWT required)."""
+    # Authenticate user with username/password
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     # Generate new API key
     api_key = User.generate_api_key()
     
     # Update user with new API key
-    current_user.api_key = api_key
+    user.api_key = api_key
     db.commit()
     
     return {
