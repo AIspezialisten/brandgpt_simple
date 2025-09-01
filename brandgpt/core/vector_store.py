@@ -38,7 +38,9 @@ class VectorStore:
         self,
         documents: List[LangchainDocument],
         session_id: str,
-        user_id: int
+        user_id: int,
+        document_id: Optional[int] = None,
+        group_id: Optional[str] = None
     ) -> List[str]:
         try:
             texts = [doc.page_content for doc in documents]
@@ -56,6 +58,12 @@ class VectorStore:
                     "user_id": user_id,
                     **doc.metadata
                 }
+                
+                if document_id:
+                    payload["document_id"] = document_id
+                
+                if group_id:
+                    payload["group_id"] = group_id
                 
                 points.append(
                     PointStruct(
@@ -139,4 +147,39 @@ class VectorStore:
             logger.info(f"Deleted documents for session: {session_id}")
         except Exception as e:
             logger.error(f"Error deleting documents: {str(e)}")
+            raise
+    
+    async def delete_by_document_id(self, document_id: int):
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector={
+                    "filter": {
+                        "must": [
+                            {"key": "document_id", "match": {"value": document_id}}
+                        ]
+                    }
+                }
+            )
+            logger.info(f"Deleted vectors for document: {document_id}")
+        except Exception as e:
+            logger.error(f"Error deleting document vectors: {str(e)}")
+            raise
+    
+    async def delete_by_group_id(self, group_id: str, user_id: int):
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector={
+                    "filter": {
+                        "must": [
+                            {"key": "group_id", "match": {"value": group_id}},
+                            {"key": "user_id", "match": {"value": user_id}}
+                        ]
+                    }
+                }
+            )
+            logger.info(f"Deleted vectors for group_id: {group_id} (user: {user_id})")
+        except Exception as e:
+            logger.error(f"Error deleting group vectors: {str(e)}")
             raise

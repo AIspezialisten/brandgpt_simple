@@ -192,32 +192,37 @@ async def list_prompts(
 
 
 # Ingestion endpoints
-@app.post("/api/ingest/file/{session_id}", response_model=schemas.IngestionStatus)
+@app.post("/api/ingest/file", response_model=schemas.IngestionStatus)
 async def ingest_file(
     background_tasks: BackgroundTasks,
-    session_id: str,
     file: UploadFile = File(...),
+    group_id: Optional[str] = None,
+    session_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Verify session belongs to user
-    session = db.query(DBSession).filter(
-        DBSession.id == session_id,
-        DBSession.user_id == current_user.id
-    ).first()
-    
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+    # If session_id is provided, verify it belongs to user
+    session = None
+    if session_id:
+        session = db.query(DBSession).filter(
+            DBSession.id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
     
     # Determine content type
     content_type = "pdf" if file.filename.endswith(".pdf") else "text"
     
     # Create document record
     document = Document(
+        user_id=current_user.id,
         session_id=session_id,
+        group_id=group_id,
         filename=file.filename,
         content_type=content_type
     )
@@ -257,21 +262,25 @@ async def ingest_url(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Verify session belongs to user
-    session = db.query(DBSession).filter(
-        DBSession.id == data.session_id,
-        DBSession.user_id == current_user.id
-    ).first()
-    
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
+    # If session_id is provided, verify it belongs to user
+    session = None
+    if data.session_id:
+        session = db.query(DBSession).filter(
+            DBSession.id == data.session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
     
     # Create document record
     document = Document(
+        user_id=current_user.id,
         session_id=data.session_id,
+        group_id=data.group_id,
         url=data.url,
         content_type="url",
         doc_metadata={"max_depth": data.max_depth} if data.max_depth else None
@@ -339,7 +348,9 @@ async def ingest_structured_data(
     }
     
     document = Document(
+        user_id=current_user.id,
         session_id=session_id,
+        group_id=data.group_id,
         content_type="structured",
         doc_metadata=doc_metadata
     )
@@ -476,6 +487,96 @@ async def list_documents(
     
     documents = db.query(Document).filter(Document.session_id == session_id).all()
     return documents
+
+
+# Delete endpoint
+@app.delete("/api/data", response_model=schemas.DeleteResponse)
+async def delete_data(
+    data: schemas.DeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete documents and their vector embeddings.
+    
+    Can delete by:
+    - group_id: Delete all documents with this group_id
+    - document_id: Delete specific document by ID  
+    - session_id: Delete all documents in this session
+    
+    Only one parameter should be provided.
+    """
+    from brandgpt.core.vector_store import VectorStore
+    
+    if not any([data.group_id, data.document_id, data.session_id]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide either group_id, document_id, or session_id"
+        )
+    
+    if sum(bool(x) for x in [data.group_id, data.document_id, data.session_id]) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only one of group_id, document_id, or session_id should be provided"
+        )
+    
+    # Build query to find documents to delete
+    query = db.query(Document).filter(Document.user_id == current_user.id)
+    
+    if data.group_id:
+        query = query.filter(Document.group_id == data.group_id)
+        delete_message = f"All documents with group_id '{data.group_id}'"
+    elif data.document_id:
+        query = query.filter(Document.id == data.document_id)
+        delete_message = f"Document with ID {data.document_id}"
+    elif data.session_id:
+        # Verify session belongs to user
+        session = db.query(DBSession).filter(
+            DBSession.id == data.session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+        
+        query = query.filter(Document.session_id == data.session_id)
+        delete_message = f"All documents in session '{data.session_id}'"
+    
+    # Get documents to delete
+    documents_to_delete = query.all()
+    
+    if not documents_to_delete:
+        return schemas.DeleteResponse(
+            deleted_count=0,
+            message="No documents found to delete"
+        )
+    
+    # Delete from vector store first
+    vector_store = VectorStore()
+    try:
+        if data.group_id:
+            await vector_store.delete_by_group_id(data.group_id, current_user.id)
+        elif data.document_id:
+            await vector_store.delete_by_document_id(data.document_id)
+        elif data.session_id:
+            await vector_store.delete_by_session(data.session_id)
+    except Exception as e:
+        # Log error but continue with database deletion
+        print(f"Warning: Could not delete vectors: {e}")
+    
+    # Delete from database
+    deleted_count = len(documents_to_delete)
+    for document in documents_to_delete:
+        db.delete(document)
+    
+    db.commit()
+    
+    return schemas.DeleteResponse(
+        deleted_count=deleted_count,
+        message=f"Successfully deleted {deleted_count} documents: {delete_message}"
+    )
 
 
 if __name__ == "__main__":

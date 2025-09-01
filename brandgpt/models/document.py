@@ -8,7 +8,9 @@ class Document(Base):
     __tablename__ = "documents"
     
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Owner of the document
     session_id = Column(String, ForeignKey("sessions.id"), nullable=True)  # Nullable for user-scoped content
+    group_id = Column(String, nullable=True, index=True)  # For organizing content
     filename = Column(String, nullable=True)
     url = Column(String, nullable=True)
     content_type = Column(String, nullable=False)  # pdf, text, url, json

@@ -65,7 +65,8 @@ class PromptResponse(BaseModel):
 
 
 class DocumentUpload(BaseModel):
-    session_id: str
+    session_id: Optional[str] = Field(None, description="Session ID for scoping (optional)")
+    group_id: Optional[str] = Field(None, description="Group ID for organizing content")
     content_type: str = Field(..., pattern=r"^(pdf|text|url|json)$")
     url: Optional[str] = None
     max_depth: Optional[int] = Field(
@@ -74,6 +75,10 @@ class DocumentUpload(BaseModel):
         le=10, 
         description="Depth parameter for URL scraping. 1=only provided URL, 2=URL + all links it contains, etc. Default is 1."
     )
+
+
+class FileUpload(BaseModel):
+    group_id: Optional[str] = Field(None, description="Group ID for organizing content")
 
 
 class QueryRequest(BaseModel):
@@ -108,4 +113,17 @@ class StructuredDataResponse(BaseModel):
     document_id: int
     status: str
     items_processed: int
+    message: str
+
+
+class DeleteRequest(BaseModel):
+    """Request for deleting documents or data."""
+    group_id: Optional[str] = Field(None, description="Delete all documents with this group_id")
+    document_id: Optional[int] = Field(None, description="Delete specific document by ID")
+    session_id: Optional[str] = Field(None, description="Delete all documents in this session")
+
+
+class DeleteResponse(BaseModel):
+    """Response for delete operations."""
+    deleted_count: int
     message: str
