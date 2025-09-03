@@ -1,0 +1,352 @@
+.TH BRANDGPT 1 "2024" "BrandGPT CLI" "User Commands"
+.SH NAME
+brandgpt \- BrandGPT RAG API command-line interface
+
+.SH SYNOPSIS
+.B brandgpt
+[\fIOPTIONS\fR]
+[\fICOMMAND\fR]
+[\fIARGS\fR...]
+
+.SH DESCRIPTION
+The BrandGPT CLI is a comprehensive command-line interface for interacting with the BrandGPT RAG (Retrieval-Augmented Generation) API. It provides functionality for authentication, document ingestion, session management, and intelligent querying of document collections.
+
+.SH GLOBAL OPTIONS
+.TP
+.BR \-V ", " \-\-version
+Display version information and exit.
+
+.TP
+.BR \-\-config\-path
+Show the path to the configuration file and exit.
+
+.TP
+.BR \-\-debug
+Enable detailed debug output for troubleshooting.
+
+.TP
+.BR \-h ", " \-\-help
+Display help information and exit.
+
+.SH COMMANDS
+
+.SS Authentication Commands (auth)
+Manage user authentication and API keys.
+
+.TP
+.B brandgpt auth login
+[\fB\-u\fR \fIusername\fR]
+[\fB\-p\fR \fIpassword\fR]
+[\fB\-s\fR \fIserver\fR]
+.br
+Login with username and password. Optionally generates an API key for future use.
+
+.TP
+.B brandgpt auth register
+[\fB\-u\fR \fIusername\fR]
+[\fB\-e\fR \fIemail\fR]
+[\fB\-p\fR \fIpassword\fR]
+[\fB\-s\fR \fIserver\fR]
+.br
+Register a new user account with input validation.
+
+.TP
+.B brandgpt auth set\-key
+[\fB\-k\fR \fIapikey\fR]
+.br
+Set an API key for authentication.
+
+.TP
+.B brandgpt auth generate\-key
+[\fB\-s\fR \fIserver\fR]
+.br
+Generate a new API key using existing authentication.
+
+.TP
+.B brandgpt auth whoami
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-s\fR \fIserver\fR]
+.br
+Display current user information.
+
+.TP
+.B brandgpt auth logout
+Clear stored authentication credentials.
+
+.SS Session Management Commands (sessions)
+Manage document sessions and organization.
+
+.TP
+.B brandgpt sessions list
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-limit\fR \fInumber\fR]
+.br
+List all sessions for the current user.
+
+.TP
+.B brandgpt sessions create
+[\fB\-n\fR \fIname\fR]
+[\fB\-\-format\fR \fIformat\fR]
+.br
+Create a new document session.
+
+.TP
+.B brandgpt sessions get
+\fIsession\-id\fR
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-include\-docs\fR]
+.br
+Get detailed information about a specific session.
+
+.TP
+.B brandgpt sessions update
+\fIsession\-id\fR
+[\fB\-n\fR \fIname\fR]
+[\fB\-\-format\fR \fIformat\fR]
+.br
+Update session name or properties.
+
+.TP
+.B brandgpt sessions delete
+\fIsession\-id\fR
+[\fB\-f\fR]
+.br
+Delete a session and all its documents. Use \fB\-f\fR to skip confirmation.
+
+.TP
+.B brandgpt sessions docs
+\fIsession\-id\fR
+[\fB\-\-format\fR \fIformat\fR]
+.br
+List all documents in a specific session.
+
+.SS Data Ingestion Commands (ingest)
+Upload and process various types of documents.
+
+.TP
+.B brandgpt ingest file
+\fIfile\-path\fR
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-wait\fR]
+.br
+Upload and process a single file.
+
+.TP
+.B brandgpt ingest url
+\fIurl\fR
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-d\fR \fIdepth\fR]
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-wait\fR]
+.br
+Scrape and ingest content from a URL with configurable depth.
+
+.TP
+.B brandgpt ingest data
+[\fIjson\-file\fR]
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-stdin\fR]
+.br
+Ingest structured JSON data from file, stdin, or interactive editor.
+
+.TP
+.B brandgpt ingest batch
+\fIdirectory\fR
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-\-pattern\fR \fIpattern\fR]
+[\fB\-\-recursive\fR]
+[\fB\-\-format\fR \fIformat\fR]
+.br
+Upload all matching files from a directory with pattern support.
+
+.TP
+.B brandgpt ingest status
+\fIsession\-id\fR
+[\fB\-\-format\fR \fIformat\fR]
+.br
+Check processing status of documents in a session.
+
+.SS Query and Search Commands (query)
+Search and query document collections intelligently.
+
+.TP
+.B brandgpt query ask
+[\fIquestion\fR]
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-m\fR \fImax\-results\fR]
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-sources\-only\fR]
+[\fB\-\-no\-sources\fR]
+.br
+Ask questions about documents. Interactive mode if no question provided.
+
+.TP
+.B brandgpt query search
+\fIterms\fR
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-m\fR \fImax\-results\fR]
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-threshold\fR \fIscore\fR]
+.br
+Search for specific terms with semantic similarity matching.
+
+.TP
+.B brandgpt query chat
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-m\fR \fImax\-results\fR]
+.br
+Start an interactive chat session with document context.
+
+.TP
+.B brandgpt query batch
+\fIquestions\-file\fR
+\fB\-s\fR \fIsession\-id\fR
+[\fB\-g\fR \fIgroup\-id\fR]
+[\fB\-m\fR \fImax\-results\fR]
+[\fB\-\-output\fR \fIfile\fR]
+[\fB\-\-format\fR \fIformat\fR]
+[\fB\-\-delay\fR \fIms\fR]
+.br
+Run multiple queries from a file (one question per line).
+
+.SS Configuration Commands (config)
+Manage CLI configuration and settings.
+
+.TP
+.B brandgpt config show
+[\fB\-\-format\fR \fIformat\fR]
+.br
+Display current configuration with masked sensitive data.
+
+.TP
+.B brandgpt config set
+\fIkey\fR \fIvalue\fR
+.br
+Set a configuration value. Valid keys: baseUrl, defaultTimeout, outputFormat.
+
+.TP
+.B brandgpt config clear
+Clear all configuration settings with confirmation prompt.
+
+.SS Health Check Command
+.TP
+.B brandgpt health
+[\fB\-s\fR \fIserver\fR]
+.br
+Check API server connectivity and status.
+
+.SH OUTPUT FORMATS
+The CLI supports multiple output formats specified with \fB\-\-format\fR:
+
+.TP
+.B table
+Human-readable tabular format with borders (default)
+
+.TP
+.B json
+Machine-readable JSON format
+
+.TP
+.B yaml
+Human-readable YAML format
+
+.SH FILES
+.TP
+.I ~/.brandgpt/config.json
+User configuration file storing API keys, server URLs, and preferences.
+
+.SH ENVIRONMENT VARIABLES
+.TP
+.B DEBUG
+Set to any value to enable debug output (equivalent to \fB\-\-debug\fR).
+
+.TP
+.B BRANDGPT_BASE_URL
+Default server URL for API connections.
+
+.TP
+.B BRANDGPT_API_KEY
+Default API key for authentication.
+
+.SH EXAMPLES
+.TP
+Basic authentication and setup:
+.nf
+brandgpt auth login
+brandgpt sessions create \-\-name "My Project"
+.fi
+
+.TP
+Upload and analyze documents:
+.nf
+brandgpt ingest file document.pdf \-\-session session\-id
+brandgpt query ask "What is the main topic?" \-\-session session\-id
+.fi
+
+.TP
+Batch processing workflow:
+.nf
+brandgpt ingest batch ./documents \-\-session session\-id \-\-pattern "*.pdf"
+brandgpt ingest status session\-id
+echo "What are the key findings?" > questions.txt
+brandgpt query batch questions.txt \-\-session session\-id \-\-output results.json
+.fi
+
+.TP
+Advanced querying with groups:
+.nf
+brandgpt ingest file legal.pdf \-\-session session\-id \-\-group\-id "legal"
+brandgpt ingest file technical.pdf \-\-session session\-id \-\-group\-id "tech"
+brandgpt query ask "Legal requirements?" \-\-session session\-id \-\-group\-id "legal"
+.fi
+
+.TP
+Interactive chat session:
+.nf
+brandgpt query chat \-\-session session\-id
+# Type questions, use 'exit' to quit
+.fi
+
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+
+.TP
+.B 1
+General error (authentication, network, validation, etc.)
+
+.SH DIAGNOSTICS
+Use \fB\-\-debug\fR for detailed error information and request/response logging.
+
+Common issues:
+.IP \(bu
+Authentication errors: Use \fBbrandgpt auth whoami\fR to check status
+.IP \(bu
+Connection errors: Use \fBbrandgpt health \-\-server URL\fR to test connectivity
+.IP \(bu
+File upload errors: Check file permissions and path validity
+.IP \(bu
+Processing delays: Use \fBbrandgpt ingest status session\-id\fR to monitor
+
+.SH SEE ALSO
+.BR curl (1),
+.BR jq (1)
+
+Full documentation available at: https://github.com/marcapo/brandgpt-nodejs-client
+
+.SH AUTHOR
+Written by Marcapo for the BrandGPT project.
+
+.SH COPYRIGHT
+Copyright \(co 2024 Marcapo. MIT License.
+This is free software: you are free to change and redistribute it.
