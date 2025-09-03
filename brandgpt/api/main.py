@@ -201,6 +201,12 @@ async def ingest_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    logger.info(f"=== FILE INGESTION DEBUG ===")
+    logger.info(f"User: {current_user.username} (ID: {current_user.id})")
+    logger.info(f"File: {file.filename}")
+    logger.info(f"Session ID: {session_id}")
+    logger.info(f"Group ID: {group_id}")
+    logger.info(f"Database engine: {db.bind}")
     # If session_id is provided, verify it belongs to user
     session = None
     if session_id:
@@ -219,16 +225,28 @@ async def ingest_file(
     content_type = "pdf" if file.filename.endswith(".pdf") else "text"
     
     # Create document record
-    document = Document(
-        user_id=current_user.id,
-        session_id=session_id,
-        group_id=group_id,
-        filename=file.filename,
-        content_type=content_type
-    )
-    db.add(document)
-    db.commit()
-    db.refresh(document)
+    logger.info(f"Creating document record...")
+    try:
+        document = Document(
+            user_id=current_user.id,
+            session_id=session_id,
+            group_id=group_id,
+            filename=file.filename,
+            content_type=content_type
+        )
+        logger.info(f"Document object created: {document}")
+        db.add(document)
+        logger.info(f"Document added to session")
+        db.commit()
+        logger.info(f"Document committed to database")
+        db.refresh(document)
+        logger.info(f"Document refreshed, ID: {document.id}")
+    except Exception as e:
+        logger.error(f"Error creating document record: {str(e)}")
+        logger.error(f"Exception type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
     
     # Read file content and save temporarily
     import tempfile

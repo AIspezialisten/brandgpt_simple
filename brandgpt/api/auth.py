@@ -7,6 +7,9 @@ from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorization
 from sqlalchemy.orm import Session
 from brandgpt.models import User, get_db
 from brandgpt.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
@@ -57,19 +60,65 @@ async def get_current_user_api_key(
     db: Session = Depends(get_db)
 ) -> Optional[User]:
     """Get user from API key in Authorization header."""
+    logger.info(f"=== API KEY AUTH DEBUG ===")
+    logger.info(f"Authorization header: {authorization[:20] + '...' if authorization and len(authorization) > 20 else authorization}")
+    
     if not authorization:
+        logger.info("No authorization header provided")
         return None
     
     # Support both "Bearer API_KEY" and "API_KEY" formats
     api_key = authorization
     if authorization.startswith("Bearer "):
         api_key = authorization[7:]
+        logger.info("Extracted API key from Bearer format")
+    
+    logger.info(f"API key (first 10 chars): {api_key[:10]}...")
     
     if not api_key.startswith("bgpt_"):
+        logger.info("API key does not start with 'bgpt_'")
         return None
     
-    user = db.query(User).filter(User.api_key == api_key).first()
-    return user
+    logger.info("API key format is valid, querying database...")
+    
+    try:
+        # Debug the database query
+        from sqlalchemy import text
+        logger.info(f"Database engine: {db.bind}")
+        
+        # Check if users table exists and has api_key column
+        result = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='users'"))
+        table_exists = result.fetchone() is not None
+        logger.info(f"Users table exists: {table_exists}")
+        
+        if table_exists:
+            # Check table structure
+            result = db.execute(text("PRAGMA table_info(users)"))
+            columns = result.fetchall()
+            column_names = [col[1] for col in columns]
+            logger.info(f"Users table columns: {column_names}")
+            logger.info(f"Has api_key column: {'api_key' in column_names}")
+            
+            # Count total users
+            result = db.execute(text("SELECT COUNT(*) FROM users"))
+            total_users = result.scalar()
+            logger.info(f"Total users in database: {total_users}")
+            
+            # Check for users with API keys
+            result = db.execute(text("SELECT COUNT(*) FROM users WHERE api_key IS NOT NULL"))
+            users_with_keys = result.scalar()
+            logger.info(f"Users with API keys: {users_with_keys}")
+        
+        user = db.query(User).filter(User.api_key == api_key).first()
+        logger.info(f"User found: {user.username if user else None}")
+        return user
+        
+    except Exception as e:
+        logger.error(f"Database query error: {str(e)}")
+        logger.error(f"Exception type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return None
 
 
 async def get_current_user(

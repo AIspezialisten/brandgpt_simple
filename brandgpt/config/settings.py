@@ -54,3 +54,23 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Debug logging for settings
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"=== SETTINGS DEBUG ===")
+logger.info(f"DATABASE_URL from env: {settings.database_url}")
+logger.info(f"API_HOST: {settings.api_host}")
+logger.info(f"API_PORT: {settings.api_port}")
+
+# Check environment variables
+import os
+logger.info(f"DATABASE_URL env var: {os.getenv('DATABASE_URL', 'NOT SET')}")
+logger.info(f"Working directory: {os.getcwd()}")
+
+# Check if database file path is absolute or relative
+if "sqlite" in settings.database_url:
+    db_path = settings.database_url.replace("sqlite:///", "")
+    logger.info(f"Database file path: {db_path}")
+    logger.info(f"Absolute database path: {os.path.abspath(db_path)}")
+    logger.info(f"Database file exists at startup: {os.path.exists(db_path)}")
