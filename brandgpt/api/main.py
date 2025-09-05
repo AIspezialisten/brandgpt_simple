@@ -425,14 +425,22 @@ async def process_structured_data_task(
         
         if documents:
             # Store in vector database
-            await vector_store.add_documents(documents)
+            from brandgpt.core.vector_store import VectorStore
+            vector_store = VectorStore()
+            await vector_store.add_documents(
+                documents=documents,
+                session_id=session_id,
+                user_id=user_id,
+                document_id=document_id,
+                group_id=group_id
+            )
             
             # Update document status
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
                 doc.status = "completed"
                 doc.doc_metadata = {
-                    **doc.doc_metadata,
+                    **(doc.doc_metadata or {}),
                     "chunks_created": len(documents)
                 }
                 db.commit()
@@ -505,6 +513,139 @@ async def list_documents(
     
     documents = db.query(Document).filter(Document.session_id == session_id).all()
     return documents
+
+
+# Debug endpoints
+@app.get("/api/debug/qdrant-info")
+async def debug_qdrant_info(current_user: User = Depends(get_current_user)):
+    """Debug endpoint to check Qdrant connection and collection info."""
+    from brandgpt.core.vector_store import VectorStore
+    
+    try:
+        vector_store = VectorStore()
+        
+        # Get collection info
+        collections = vector_store.client.get_collections().collections
+        collection_info = None
+        
+        for collection in collections:
+            if collection.name == settings.qdrant_collection_name:
+                collection_info = vector_store.client.get_collection(settings.qdrant_collection_name)
+                break
+        
+        # Count total points
+        total_points = 0
+        user_points = 0
+        
+        if collection_info:
+            # Get total count
+            total_points = vector_store.client.count(
+                collection_name=settings.qdrant_collection_name
+            ).count
+            
+            # Get user-specific count
+            user_count_result = vector_store.client.count(
+                collection_name=settings.qdrant_collection_name,
+                count_filter={
+                    "must": [
+                        {"key": "user_id", "match": {"value": current_user.id}}
+                    ]
+                }
+            )
+            user_points = user_count_result.count
+        
+        return {
+            "qdrant_url": settings.qdrant_url,
+            "collection_name": settings.qdrant_collection_name,
+            "collection_exists": collection_info is not None,
+            "total_points": total_points,
+            "user_points": user_points,
+            "user_id": current_user.id,
+            "collections": [c.name for c in collections]
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug Qdrant info error: {str(e)}")
+        return {
+            "error": str(e),
+            "qdrant_url": settings.qdrant_url,
+            "collection_name": settings.qdrant_collection_name
+        }
+
+
+@app.get("/api/debug/search-test")
+async def debug_search_test(
+    query: str = "test",
+    current_user: User = Depends(get_current_user)
+):
+    """Debug endpoint to test vector search without user filtering."""
+    from brandgpt.core.vector_store import VectorStore
+    
+    try:
+        vector_store = VectorStore()
+        
+        # Test search with user filtering (normal)
+        user_results = await vector_store.search(
+            query=query,
+            user_id=current_user.id,
+            limit=10
+        )
+        
+        # Test search without user filtering (debug)
+        all_results = await vector_store.search(
+            query=query,
+            user_id=None,  # No user filtering
+            limit=10
+        )
+        
+        return {
+            "query": query,
+            "user_id": current_user.id,
+            "user_filtered_results": len(user_results),
+            "all_results": len(all_results),
+            "user_results_sample": user_results[:2] if user_results else [],
+            "all_results_sample": all_results[:2] if all_results else []
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug search test error: {str(e)}")
+        return {
+            "error": str(e),
+            "query": query,
+            "user_id": current_user.id
+        }
+
+
+@app.get("/api/debug/embedding-test")
+async def debug_embedding_test(
+    text: str = "test text",
+    current_user: User = Depends(get_current_user)
+):
+    """Debug endpoint to test embedding service."""
+    from brandgpt.core.embeddings import EmbeddingService
+    
+    try:
+        embedding_service = EmbeddingService()
+        
+        # Test embedding generation
+        embedding = await embedding_service.embed_query(text)
+        
+        return {
+            "text": text,
+            "embedding_length": len(embedding),
+            "embedding_sample": embedding[:5],  # First 5 dimensions
+            "ollama_url": settings.ollama_embedding_url,
+            "model": settings.ollama_embedding_model
+        }
+        
+    except Exception as e:
+        logger.error(f"Debug embedding test error: {str(e)}")
+        return {
+            "error": str(e),
+            "text": text,
+            "ollama_url": settings.ollama_embedding_url,
+            "model": settings.ollama_embedding_model
+        }
 
 
 # Delete endpoint

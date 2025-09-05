@@ -46,15 +46,36 @@ class RAGGraph:
     
     async def retrieve_documents(self, state: RAGState) -> RAGState:
         try:
+            logger.info(f"=== RETRIEVAL DEBUG ===")
+            logger.info(f"Query: {state['query']}")
+            logger.info(f"User ID: {state.get('user_id')}")
+            logger.info(f"Limit: {settings.reranker_candidates}")
+            
             documents = await self.vector_store.search(
                 query=state["query"],
                 user_id=state.get("user_id"),
                 limit=settings.reranker_candidates
             )
             state["retrieved_docs"] = documents
+            
             logger.info(f"Retrieved {len(documents)} documents")
+            if documents:
+                logger.info(f"First document preview: {documents[0].get('text', '')[:100]}...")
+                logger.info(f"First document metadata: {documents[0].get('metadata', {})}")
+            else:
+                logger.warning("No documents retrieved - checking without user filter...")
+                # Debug: try search without user filter
+                all_docs = await self.vector_store.search(
+                    query=state["query"],
+                    user_id=None,  # No user filtering
+                    limit=settings.reranker_candidates
+                )
+                logger.info(f"Found {len(all_docs)} documents without user filter")
+                
         except Exception as e:
             logger.error(f"Error retrieving documents: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             state["error"] = str(e)
             state["retrieved_docs"] = []
         

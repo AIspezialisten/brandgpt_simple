@@ -6,8 +6,13 @@ from typing import Optional
 class Settings(BaseSettings):
     # Ollama Configuration (running on host)
     ollama_base_url: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
-    ollama_model: str = Field(default="hf.co/Qwen/Qwen3-Embedding-8B-GGUF", env="OLLAMA_MODEL")
+    ollama_embedding_url: str = Field(default="http://localhost:11434", env="OLLAMA_EMBEDDING_URL")  
+    ollama_embedding_model: str = Field(default="hf.co/Qwen/Qwen3-Embedding-8B-GGUF", env="OLLAMA_EMBEDDING_MODEL")
+    ollama_llm_url: str = Field(default="http://localhost:11434", env="OLLAMA_LLM_URL")
     ollama_llm_model: str = Field(default="mistral-small:24b", env="OLLAMA_LLM_MODEL")
+    
+    # Legacy compatibility
+    ollama_model: str = Field(default="hf.co/Qwen/Qwen3-Embedding-8B-GGUF", env="OLLAMA_MODEL")
     
     # Qdrant Configuration (running in container)
     qdrant_url: str = Field(default="http://localhost:6335", env="QDRANT_URL")

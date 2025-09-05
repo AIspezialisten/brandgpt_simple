@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     def __init__(self):
         self.embeddings = OllamaEmbeddings(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_model
+            base_url=settings.ollama_embedding_url,
+            model=settings.ollama_embedding_model
         )
+        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}")
     
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         try:

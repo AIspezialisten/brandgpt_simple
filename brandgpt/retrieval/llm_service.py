@@ -11,10 +11,11 @@ logger = logging.getLogger(__name__)
 class LLMService:
     def __init__(self):
         self.llm = ChatOllama(
-            base_url=settings.ollama_base_url,
+            base_url=settings.ollama_llm_url,
             model=settings.ollama_llm_model,
             temperature=0.7
         )
+        logger.info(f"LLMService initialized with URL: {settings.ollama_llm_url}, Model: {settings.ollama_llm_model}")
     
     async def generate_response(
         self,

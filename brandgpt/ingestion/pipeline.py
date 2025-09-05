@@ -52,7 +52,13 @@ class IngestionPipeline:
                     chunks = await self.pdf_processor.process(file_path, metadata)
                     
                     # Store in vector database
-                    await self.vector_store.add_documents(chunks, session_id, user_id)
+                    await self.vector_store.add_documents(
+                        documents=chunks, 
+                        session_id=session_id, 
+                        user_id=user_id, 
+                        document_id=document_id,
+                        group_id=document.group_id
+                    )
                     
                 elif filename.lower().endswith('.json'):
                     # Process JSON with enhanced processor
@@ -61,7 +67,13 @@ class IngestionPipeline:
                     chunks = await self.json_processor.process(content, metadata)
                     
                     # Store in vector database like other content types
-                    await self.vector_store.add_documents(chunks, session_id, user_id)
+                    await self.vector_store.add_documents(
+                        documents=chunks, 
+                        session_id=session_id, 
+                        user_id=user_id, 
+                        document_id=document_id,
+                        group_id=document.group_id
+                    )
                     
                 else:
                     # Process as text (with JSON detection)
@@ -80,7 +92,13 @@ class IngestionPipeline:
                         chunks = await self.text_processor.process(content, metadata)
                     
                     # Store in vector database
-                    await self.vector_store.add_documents(chunks, session_id, user_id)
+                    await self.vector_store.add_documents(
+                        documents=chunks, 
+                        session_id=session_id, 
+                        user_id=user_id, 
+                        document_id=document_id,
+                        group_id=document.group_id
+                    )
                 
                 # Update document status
                 document.processed = "completed"
@@ -147,7 +165,13 @@ class IngestionPipeline:
             chunks = await self.url_processor.process(url, metadata)
             
             # Store in vector database
-            await self.vector_store.add_documents(chunks, session_id, user_id)
+            await self.vector_store.add_documents(
+                documents=chunks, 
+                session_id=session_id, 
+                user_id=user_id, 
+                document_id=document_id,
+                group_id=document.group_id
+            )
             
             # Update document status
             document.processed = "completed"
