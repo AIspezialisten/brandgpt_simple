@@ -523,6 +523,7 @@ async def debug_qdrant_info(current_user: User = Depends(get_current_user)):
     
     try:
         vector_store = VectorStore()
+        vector_store._ensure_initialized()
         
         # Get collection info
         collections = vector_store.client.get_collections().collections
@@ -583,6 +584,7 @@ async def debug_search_test(
     
     try:
         vector_store = VectorStore()
+        vector_store._ensure_initialized()
         
         # Test search with user filtering (normal)
         user_results = await vector_store.search(

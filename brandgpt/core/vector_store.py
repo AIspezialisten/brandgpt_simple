@@ -13,10 +13,23 @@ logger = logging.getLogger(__name__)
 
 class VectorStore:
     def __init__(self):
-        self.client = QdrantClient(url=settings.qdrant_url)
-        self.embedding_service = EmbeddingService()
+        self.client = None
+        self.embedding_service = None
         self.collection_name = settings.qdrant_collection_name
-        self._ensure_collection()
+        self._initialized = False
+    
+    def _ensure_initialized(self):
+        """Lazy initialization to avoid startup issues."""
+        if not self._initialized:
+            try:
+                self.client = QdrantClient(url=settings.qdrant_url)
+                self.embedding_service = EmbeddingService()
+                self._ensure_collection()
+                self._initialized = True
+                logger.info("VectorStore initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize VectorStore: {str(e)}")
+                raise
     
     def _ensure_collection(self):
         try:
@@ -42,6 +55,7 @@ class VectorStore:
         document_id: Optional[int] = None,
         group_id: Optional[str] = None
     ) -> List[str]:
+        self._ensure_initialized()
         try:
             texts = [doc.page_content for doc in documents]
             embeddings = await self.embedding_service.embed_documents(texts)
@@ -93,6 +107,7 @@ class VectorStore:
         limit: int = 20,
         score_threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
+        self._ensure_initialized()
         try:
             query_embedding = await self.embedding_service.embed_query(query)
             
@@ -133,6 +148,7 @@ class VectorStore:
             raise
     
     async def delete_by_session(self, session_id: str):
+        self._ensure_initialized()
         try:
             self.client.delete(
                 collection_name=self.collection_name,
@@ -150,6 +166,7 @@ class VectorStore:
             raise
     
     async def delete_by_document_id(self, document_id: int):
+        self._ensure_initialized()
         try:
             self.client.delete(
                 collection_name=self.collection_name,
@@ -167,6 +184,7 @@ class VectorStore:
             raise
     
     async def delete_by_group_id(self, group_id: str, user_id: int):
+        self._ensure_initialized()
         try:
             self.client.delete(
                 collection_name=self.collection_name,
