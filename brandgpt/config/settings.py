@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     chunk_size: int = Field(default=1000, env="CHUNK_SIZE")
     chunk_overlap: int = Field(default=200, env="CHUNK_OVERLAP")
     max_file_size_mb: int = Field(default=100, env="MAX_FILE_SIZE_MB")
+    json_batch_size: int = Field(default=100, env="JSON_BATCH_SIZE", description="Number of items per batch when processing large JSON arrays")
+    case_sensitive_search: bool = Field(default=True, env="CASE_SENSITIVE_SEARCH", description="Whether to perform case-sensitive searches (False normalizes queries to lowercase)")
     
     class Config:
         env_file = ".env"

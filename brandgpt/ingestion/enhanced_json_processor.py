@@ -42,7 +42,7 @@ class EnhancedJSONProcessor:
                 return ", ".join(value)
             else:
                 return "; ".join(self._convert_value_to_text(item, f"{context_path}[{i}]") 
-                                for i, item in enumerate(value[:5]))  # Limit to first 5 items
+                                for i, item in enumerate(value))  # Process all items
         elif isinstance(value, dict):
             return self._dict_to_text(value, context_path)
         else:
@@ -95,7 +95,7 @@ class EnhancedJSONProcessor:
                 text_parts.append(f"{indent}  - {', '.join(str(item) for item in items[:3])}, and {len(items) - 3} more items")
         else:
             # Handle complex objects in the list
-            for i, item in enumerate(items[:3]):  # Limit to first 3 items for readability
+            for i, item in enumerate(items):  # Process all items
                 if isinstance(item, dict):
                     item_text = self._dict_to_text(item, f"{context_path}[{i}]", level + 1)
                     if item_text:
@@ -104,8 +104,7 @@ class EnhancedJSONProcessor:
                 else:
                     text_parts.append(f"{indent}  - {self._convert_value_to_text(item, f'{context_path}[{i}]')}")
             
-            if len(items) > 3:
-                text_parts.append(f"{indent}  ... and {len(items) - 3} more items")
+            # Removed truncation - now processes all items
         
         return "\n".join(text_parts)
     
@@ -148,10 +147,39 @@ class EnhancedJSONProcessor:
                 elif isinstance(value, list) and value:
                     # Process arrays with complex objects
                     if all(isinstance(item, dict) for item in value):
-                        for i, item in enumerate(value[:5]):  # Process first 5 items
-                            item_context = f"{section_context} > Item {i+1}"
-                            if isinstance(item, dict):
-                                process_object(item, f"{current_path}[{i}]", item_context)
+                        # For large arrays, process in batches to avoid overwhelming the system
+                        batch_size = settings.json_batch_size
+                        for batch_start in range(0, len(value), batch_size):
+                            batch_end = min(batch_start + batch_size, len(value))
+                            batch_items = value[batch_start:batch_end]
+                            
+                            # Create a batch chunk
+                            batch_text_parts = []
+                            for i, item in enumerate(batch_items):
+                                item_num = batch_start + i + 1
+                                item_text = self._dict_to_text(item, f"{current_path}[{item_num-1}]")
+                                if item_text:
+                                    batch_text_parts.append(f"Item {item_num}:\n{item_text}")
+                            
+                            if batch_text_parts:
+                                batch_text = "\n\n".join(batch_text_parts)
+                                batch_context = f"{section_context} > Items {batch_start+1}-{batch_end}"
+                                
+                                chunk_metadata = {
+                                    **metadata,
+                                    "json_path": f"{current_path}[{batch_start}:{batch_end}]",
+                                    "context": batch_context,
+                                    "chunk_type": "json_batch",
+                                    "batch_start": batch_start,
+                                    "batch_end": batch_end,
+                                    "total_items": len(value)
+                                }
+                                
+                                full_text = f"Context: {batch_context}\n\n{batch_text}"
+                                documents.append(LangchainDocument(
+                                    page_content=full_text,
+                                    metadata=chunk_metadata
+                                ))
         
         # Start processing from the root
         process_object(data, "", "Root")

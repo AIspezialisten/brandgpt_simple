@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -252,8 +252,8 @@ async def list_prompts(
 async def ingest_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    group_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    group_id: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -543,6 +543,7 @@ async def query(
     result = await rag_graph.process_query(
         query=request.query,
         user_id=current_user.id,
+        group_id=request.group_id,
         system_prompt=system_prompt
     )
     

@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class RAGState(TypedDict):
     query: str
     user_id: Optional[int]
+    group_id: Optional[str]
     system_prompt: Optional[str]
     retrieved_docs: List[Dict[str, Any]]
     reranked_docs: List[Dict[str, Any]]
@@ -49,11 +50,19 @@ class RAGGraph:
             logger.info(f"=== RETRIEVAL DEBUG ===")
             logger.info(f"Query: {state['query']}")
             logger.info(f"User ID: {state.get('user_id')}")
+            logger.info(f"Group ID: {state.get('group_id')}")
             logger.info(f"Limit: {settings.reranker_candidates}")
             
+            # Apply case normalization if case-insensitive search is enabled
+            search_query = state["query"]
+            if not settings.case_sensitive_search:
+                search_query = search_query.lower()
+                logger.info(f"Query normalized for case-insensitive search: {search_query}")
+            
             documents = await self.vector_store.search(
-                query=state["query"],
+                query=search_query,
                 user_id=state.get("user_id"),
+                group_id=state.get("group_id"),
                 limit=settings.reranker_candidates
             )
             state["retrieved_docs"] = documents
@@ -147,11 +156,13 @@ class RAGGraph:
         self,
         query: str,
         user_id: Optional[int] = None,
+        group_id: Optional[str] = None,
         system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         initial_state: RAGState = {
             "query": query,
             "user_id": user_id,
+            "group_id": group_id,
             "system_prompt": system_prompt,
             "retrieved_docs": [],
             "reranked_docs": [],
