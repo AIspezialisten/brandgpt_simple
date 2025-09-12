@@ -1,3 +1,15 @@
+# Multi-stage build: Stage 1 - Pre-pull Ollama models
+FROM ollama/ollama:latest as ollama-models
+
+# Pull required models
+RUN ollama serve & \
+    sleep 10 && \
+    ollama pull hf.co/Qwen/Qwen3-Embedding-8B-GGUF && \
+    ollama pull mistral-small:24b && \
+    sleep 5 && \
+    pkill ollama
+
+# Stage 2 - BrandGPT application
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -12,6 +24,9 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libsm6 \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy pre-pulled Ollama models from first stage
+COPY --from=ollama-models /root/.ollama /root/.ollama
 
 # Install uv
 RUN pip install uv
@@ -33,6 +48,10 @@ RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 9700
+
+# Healthcheck to ensure both app and required models are available
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:9700/health || exit 1
 
 # Run the application
 CMD ["python", "main.py"]

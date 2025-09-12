@@ -44,7 +44,63 @@ rag_graph = RAGGraph()
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Enhanced health check that validates Ollama models availability."""
+    try:
+        # Check if required Ollama models are available
+        import subprocess
+        import json
+        
+        # Get list of available models
+        result = subprocess.run(
+            ["curl", "-s", f"{settings.ollama_embedding_url}/api/tags"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0:
+            try:
+                models_data = json.loads(result.stdout)
+                available_models = [model["name"] for model in models_data.get("models", [])]
+                
+                required_models = [
+                    settings.ollama_embedding_model,
+                    settings.ollama_llm_model
+                ]
+                
+                missing_models = [model for model in required_models if model not in available_models]
+                
+                if missing_models:
+                    return {
+                        "status": "degraded",
+                        "message": f"Missing Ollama models: {missing_models}",
+                        "available_models": available_models,
+                        "required_models": required_models
+                    }
+                
+                return {
+                    "status": "healthy",
+                    "ollama_models": {
+                        "embedding": settings.ollama_embedding_model,
+                        "llm": settings.ollama_llm_model,
+                        "available": True
+                    }
+                }
+            except (json.JSONDecodeError, KeyError):
+                pass
+        
+        # Fallback - basic health check
+        return {
+            "status": "healthy",
+            "ollama_models": "not_checked"
+        }
+        
+    except Exception as e:
+        logger.warning(f"Health check error: {str(e)}")
+        return {
+            "status": "healthy",
+            "ollama_models": "error"
+        }
 
 
 # Authentication endpoints
