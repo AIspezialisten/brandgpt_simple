@@ -20,13 +20,16 @@ export class IngestionAPI {
     options: FileIngestionOptions = {}
   ): Promise<IngestionStatus> {
     const additionalFields: Record<string, string> = {};
-    
+
     if (options.groupId) {
       additionalFields.group_id = options.groupId;
     }
 
+    // Add session_id as a form field
+    additionalFields.session_id = sessionId;
+
     return this.client.uploadFile<IngestionStatus>(
-      `/api/ingest/file/${sessionId}`,
+      `/api/ingest/file`,
       file,
       filename,
       additionalFields
@@ -42,6 +45,7 @@ export class IngestionAPI {
   ): Promise<IngestionStatus> {
     const requestData = {
       url,
+      content_type: "url",  // Required field
       max_depth: options.maxDepth,
       max_links_per_page: options.maxLinksPerPage,
       group_id: options.groupId,

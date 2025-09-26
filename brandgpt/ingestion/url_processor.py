@@ -142,8 +142,17 @@ class URLProcessor:
     
     async def process(self, url: str, metadata: Dict[str, Any] = None) -> List[LangchainDocument]:
         try:
-            max_depth = metadata.get('max_depth', settings.max_scrape_depth) if metadata else settings.max_scrape_depth
-            max_links_per_page = metadata.get('max_links_per_page', settings.max_links_per_page) if metadata else settings.max_links_per_page
+            # Ensure max_depth is always an integer, never None
+            if metadata and 'max_depth' in metadata and metadata['max_depth'] is not None:
+                max_depth = int(metadata['max_depth'])
+            else:
+                max_depth = settings.max_scrape_depth
+
+            # Ensure max_links_per_page is always an integer, never None
+            if metadata and 'max_links_per_page' in metadata and metadata['max_links_per_page'] is not None:
+                max_links_per_page = int(metadata['max_links_per_page'])
+            else:
+                max_links_per_page = settings.max_links_per_page
             
             # Run scraper in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
