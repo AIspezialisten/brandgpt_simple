@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = Field(default="hf.co/Qwen/Qwen3-Embedding-8B-GGUF", env="OLLAMA_EMBEDDING_MODEL")
     ollama_llm_url: str = Field(default="http://localhost:11434", env="OLLAMA_LLM_URL")
     ollama_llm_model: str = Field(default="mistral-small:24b", env="OLLAMA_LLM_MODEL")
-    ollama_keep_alive: str = Field(default="5m", env="OLLAMA_KEEP_ALIVE")
+    ollama_keep_alive: int = Field(default=86400, env="OLLAMA_KEEP_ALIVE")  # 24 hours in seconds
     
     # Legacy compatibility
     ollama_model: str = Field(default="hf.co/Qwen/Qwen3-Embedding-8B-GGUF", env="OLLAMA_MODEL")
