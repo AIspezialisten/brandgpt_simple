@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import hashlib
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -17,14 +18,32 @@ http_bearer = HTTPBearer(auto_error=False)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    # Handle both bcrypt and SHA256 formats for compatibility
+    if hashed_password.startswith("sha256$"):
+        # New SHA256 format: sha256$salt$hash
+        parts = hashed_password.split("$")
+        if len(parts) == 3:
+            salt = parts[1]
+            stored_hash = parts[2]
+            test_hash = hashlib.sha256((plain_password + salt).encode()).hexdigest()
+            return test_hash == stored_hash
+        return False
+    else:
+        # Legacy bcrypt format
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception:
+            return False
 
 
 def get_password_hash(password: str) -> str:
-    # Bcrypt has a 72 byte limit, truncate if necessary
-    if len(password.encode('utf-8')) > 72:
-        password = password.encode('utf-8')[:72].decode('utf-8', errors='ignore')
-    return pwd_context.hash(password)
+    # Use SHA256 to avoid bcrypt issues in production
+    # This is a temporary fix for the production bcrypt library bug
+    import hashlib
+    import secrets
+    salt = secrets.token_hex(16)
+    password_hash = hashlib.sha256((password + salt).encode()).hexdigest()
+    return f"sha256${salt}${password_hash}"
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
