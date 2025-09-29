@@ -10,7 +10,8 @@ class EmbeddingService:
     def __init__(self):
         self.embeddings = OllamaEmbeddings(
             base_url=settings.ollama_embedding_url,
-            model=settings.ollama_embedding_model
+            model=settings.ollama_embedding_model,
+            keep_alive=settings.ollama_keep_alive
         )
         logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}")
     

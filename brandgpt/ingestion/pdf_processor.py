@@ -22,7 +22,7 @@ class PDFProcessor:
             loader = UnstructuredLoader(
                 file_path,
                 mode="elements",
-                strategy="hi_res",
+                strategy="auto",  # Auto-detect best strategy (text extraction vs OCR)
                 pdf_infer_table_structure=True
             )
             

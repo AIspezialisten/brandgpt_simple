@@ -572,6 +572,48 @@ async def list_documents(
     return documents
 
 
+@app.get("/api/documents")
+async def list_user_documents(
+    session_id: Optional[str] = None,
+    group_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List documents for the current user with flexible filtering options.
+
+    Parameters:
+    - session_id (optional): Filter by specific session
+    - group_id (optional): Filter by specific group
+    - Both can be combined for more specific filtering
+    - If neither provided, returns all user documents
+
+    This supports both session-based and session-independent document retrieval.
+    """
+    query = db.query(Document).filter(Document.user_id == current_user.id)
+
+    if session_id:
+        # Verify session belongs to user
+        session = db.query(DBSession).filter(
+            DBSession.id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+
+        query = query.filter(Document.session_id == session_id)
+
+    if group_id:
+        query = query.filter(Document.group_id == group_id)
+
+    documents = query.order_by(Document.created_at.desc()).all()
+    return documents
+
+
 # Debug endpoints
 @app.get("/api/debug/qdrant-info")
 async def debug_qdrant_info(current_user: User = Depends(get_current_user)):

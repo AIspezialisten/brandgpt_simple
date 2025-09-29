@@ -13,7 +13,8 @@ class LLMService:
         self.llm = ChatOllama(
             base_url=settings.ollama_llm_url,
             model=settings.ollama_llm_model,
-            temperature=0.7
+            temperature=0.7,
+            keep_alive=settings.ollama_keep_alive
         )
         logger.info(f"LLMService initialized with URL: {settings.ollama_llm_url}, Model: {settings.ollama_llm_model}")
     

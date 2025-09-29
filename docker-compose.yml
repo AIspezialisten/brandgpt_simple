@@ -6,6 +6,7 @@ services:
       - DATABASE_URL=sqlite:///./data/brandgpt.db
       - QDRANT_URL=http://localhost:6333
       - OLLAMA_BASE_URL=http://localhost:11434
+      - OLLAMA_KEEP_ALIVE=24h
       - API_HOST=0.0.0.0
       - API_PORT=9700
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}

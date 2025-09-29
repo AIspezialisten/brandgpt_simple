@@ -14,7 +14,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including OpenGL libraries and poppler for PDF processing
+# Install system dependencies including OpenGL libraries, poppler, and tesseract for PDF processing
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libsm6 \
     poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy pre-pulled Ollama models from first stage
