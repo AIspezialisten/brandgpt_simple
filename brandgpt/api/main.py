@@ -814,17 +814,21 @@ async def delete_data(
         )
     
     # Delete from vector store first
+    # Delete each document individually by document_id for reliability
     vector_store = VectorStore()
-    try:
-        if data.group_id:
-            await vector_store.delete_by_group_id(data.group_id, current_user.id)
-        elif data.document_id:
-            await vector_store.delete_by_document_id(data.document_id)
-        elif data.session_id:
-            await vector_store.delete_by_session(data.session_id)
-    except Exception as e:
-        # Log error but continue with database deletion
-        print(f"Warning: Could not delete vectors: {e}")
+    vector_deletion_errors = []
+    for document in documents_to_delete:
+        try:
+            await vector_store.delete_by_document_id(document.id)
+            logger.info(f"Deleted vectors for document {document.id}")
+        except Exception as e:
+            error_msg = f"Failed to delete vectors for document {document.id}: {str(e)}"
+            logger.error(error_msg)
+            vector_deletion_errors.append(error_msg)
+
+    if vector_deletion_errors:
+        logger.warning(f"Some vector deletions failed: {len(vector_deletion_errors)} errors")
+        # Continue with database deletion anyway
     
     # Delete from database
     deleted_count = len(documents_to_delete)
