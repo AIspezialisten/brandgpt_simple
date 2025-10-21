@@ -82,11 +82,19 @@ docker-compose up -d
 - **Group Organization**: Optional group_id for content categorization
 - **Cross-Session Access**: Access your content from any session
 - **Persistent Storage**: Documents remain available across app restarts
+- **Document Lifecycle**: Persistent documents (with group_id) vs temporary (session-scoped only)
 
 ### 🎭 **Reusable AI Personas**
 - **Prompt Library**: Store and reuse custom system prompts
 - **Multiple Personas**: Switch between different AI personalities
 - **Consistent Behavior**: Same persona maintains consistent responses
+- **Dynamic Switching**: Change prompts mid-session without losing context
+
+### 💬 **Conversation Memory**
+- **Chat History**: Automatic storage of all conversation messages
+- **Context-Aware Responses**: AI remembers previous messages in the session
+- **Message Retrieval**: Access full conversation history via API
+- **Multi-Turn Dialogues**: Natural conversations that build on previous context
 
 ### 🔄 **Advanced RAG Pipeline**
 - **Intelligent Retrieval**: Vector similarity search with user and group filtering
@@ -466,6 +474,190 @@ Retrieves all sessions for the authenticated user.
 ]
 ```
 
+#### Get Session Details
+Retrieve details for a specific session.
+
+**Endpoint:** `GET /api/sessions/{session_id}`
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+{
+  "id": "abc123-def456-ghi789",
+  "user_id": 1,
+  "prompt_id": 123,
+  "system_prompt": null,
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+**Error Responses:**
+- `404 Not Found`: Session not found or doesn't belong to user
+
+#### Update Session
+Change the AI persona for an existing session without losing conversation history.
+
+**Endpoint:** `PATCH /api/sessions/{session_id}`
+
+**Authentication:** Required
+
+**Request Body:**
+```json
+{
+  "prompt_id": 456,
+  "system_prompt": "You are a data analyst focused on insights..."
+}
+```
+
+**Parameters:**
+- `prompt_id` (int, optional): ID of stored prompt to use
+- `system_prompt` (string, optional): Custom system prompt text
+- Set both to `null` to use default prompt
+
+**Response:** `200 OK`
+```json
+{
+  "id": "abc123-def456-ghi789",
+  "user_id": 1,
+  "prompt_id": 456,
+  "system_prompt": null,
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+**Python Example:**
+```python
+# Switch to a different persona mid-session
+update_data = {"prompt_id": 456}
+response = requests.patch(
+    f"http://localhost:9700/api/sessions/{session_id}",
+    json=update_data,
+    headers=headers
+)
+
+print(f"Session prompt updated to ID: {response.json()['prompt_id']}")
+
+# Use custom inline prompt
+response = requests.patch(
+    f"http://localhost:9700/api/sessions/{session_id}",
+    json={"system_prompt": "You are a creative storyteller..."},
+    headers=headers
+)
+```
+
+**JavaScript Example:**
+```javascript
+// Switch session to different AI persona
+const updateResponse = await fetch(`http://localhost:9700/api/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: headers,
+    body: JSON.stringify({ prompt_id: 456 })
+});
+
+const updatedSession = await updateResponse.json();
+console.log(`Session updated: ${updatedSession.id}`);
+```
+
+#### Delete Session
+Delete a session and all associated temporary documents (documents without group_id).
+
+**Endpoint:** `DELETE /api/sessions/{session_id}`
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+{
+  "message": "Session deleted successfully"
+}
+```
+
+**Important Notes:**
+- Deletes all conversation messages in the session
+- Deletes temporary documents (without group_id)
+- **Preserves** persistent documents (with group_id) for reuse
+- Cannot be undone
+
+**Python Example:**
+```python
+response = requests.delete(
+    f"http://localhost:9700/api/sessions/{session_id}",
+    headers=headers
+)
+print(response.json()["message"])
+```
+
+#### Get Chat History
+Retrieve all conversation messages for a session.
+
+**Endpoint:** `GET /api/sessions/{session_id}/messages`
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "session_id": "abc123-def456-ghi789",
+    "user_id": 1,
+    "role": "user",
+    "content": "What are the key insights from the business report?",
+    "created_at": "2024-01-15T10:35:00"
+  },
+  {
+    "id": 2,
+    "session_id": "abc123-def456-ghi789",
+    "user_id": 1,
+    "role": "assistant",
+    "content": "Based on the business report, there are three key insights:\n1. Revenue growth of 25% YoY\n2. Market expansion opportunities in Asia\n3. Digital transformation initiatives showing strong ROI",
+    "created_at": "2024-01-15T10:35:15"
+  },
+  {
+    "id": 3,
+    "session_id": "abc123-def456-ghi789",
+    "user_id": 1,
+    "role": "user",
+    "content": "Tell me more about the Asia expansion",
+    "created_at": "2024-01-15T10:36:00"
+  }
+]
+```
+
+**Python Example:**
+```python
+# Get full conversation history
+response = requests.get(
+    f"http://localhost:9700/api/sessions/{session_id}/messages",
+    headers=headers
+)
+
+messages = response.json()
+print(f"Conversation has {len(messages)} messages:\n")
+
+for msg in messages:
+    role = "User" if msg["role"] == "user" else "AI"
+    print(f"{role}: {msg['content'][:100]}...")
+    print(f"  (Timestamp: {msg['created_at']})\n")
+```
+
+**JavaScript Example:**
+```javascript
+// Retrieve chat history
+const response = await fetch(`http://localhost:9700/api/sessions/${sessionId}/messages`, {
+    headers: headers
+});
+
+const messages = await response.json();
+console.log(`Conversation history (${messages.length} messages):`);
+
+messages.forEach(msg => {
+    const role = msg.role === 'user' ? 'User' : 'AI';
+    console.log(`${role}: ${msg.content.substring(0, 100)}...`);
+});
+```
+
 ---
 
 ### 🎭 AI Persona & Prompt Management
@@ -574,6 +766,144 @@ Retrieves all stored prompts (AI personas) accessible to the user.
 ]
 ```
 
+#### Get Prompt Details
+Retrieve details for a specific AI persona prompt.
+
+**Endpoint:** `GET /api/prompts/{prompt_id}`
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+{
+  "id": 123,
+  "name": "Business Consultant",
+  "description": "AI persona focused on business strategy and ROI analysis",
+  "content": "You are an experienced business consultant with 15+ years in strategy consulting...",
+  "created_by": 1,
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+**Error Responses:**
+- `404 Not Found`: Prompt not found
+
+#### Update Prompt
+Modify an existing AI persona. Only the creator can update their prompts.
+
+**Endpoint:** `PUT /api/prompts/{prompt_id}`
+
+**Authentication:** Required
+
+**Request Body:**
+```json
+{
+  "name": "Senior Business Consultant",
+  "description": "Updated description with more focus on digital transformation",
+  "content": "You are a senior business consultant specializing in digital transformation..."
+}
+```
+
+**Parameters:** (All optional - only provided fields will be updated)
+- `name` (string): Updated name for the prompt
+- `description` (string): Updated description
+- `content` (string): Updated system prompt content
+
+**Response:** `200 OK`
+```json
+{
+  "id": 123,
+  "name": "Senior Business Consultant",
+  "description": "Updated description with more focus on digital transformation",
+  "content": "You are a senior business consultant specializing in digital transformation...",
+  "created_by": 1,
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+**Python Example:**
+```python
+# Update only specific fields
+update_data = {
+    "description": "Enhanced AI persona for strategic business analysis",
+    "content": "You are a strategic business consultant with expertise in digital transformation, market analysis, and ROI optimization. Focus on actionable insights and measurable business outcomes."
+}
+
+response = requests.put(
+    f"http://localhost:9700/api/prompts/{prompt_id}",
+    json=update_data,
+    headers=headers
+)
+
+updated_prompt = response.json()
+print(f"Prompt updated: {updated_prompt['name']}")
+```
+
+**JavaScript Example:**
+```javascript
+const updateData = {
+    name: "Senior Technical Architect",
+    content: "You are a senior technical architect with deep expertise in distributed systems..."
+};
+
+const response = await fetch(`http://localhost:9700/api/prompts/${promptId}`, {
+    method: 'PUT',
+    headers: headers,
+    body: JSON.stringify(updateData)
+});
+
+const updatedPrompt = await response.json();
+console.log(`Prompt updated: ${updatedPrompt.name}`);
+```
+
+**Error Responses:**
+- `403 Forbidden`: You can only update your own prompts
+- `404 Not Found`: Prompt not found
+
+#### Delete Prompt
+Delete an AI persona prompt. Only the creator can delete their prompts.
+
+**Endpoint:** `DELETE /api/prompts/{prompt_id}`
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+{
+  "message": "Prompt deleted successfully"
+}
+```
+
+**Safety Features:**
+- Only the creator can delete their prompts
+- Warns if prompt is currently used by any sessions
+- Cannot be undone
+
+**Python Example:**
+```python
+response = requests.delete(
+    f"http://localhost:9700/api/prompts/{prompt_id}",
+    headers=headers
+)
+
+print(response.json()["message"])
+```
+
+**JavaScript Example:**
+```javascript
+const response = await fetch(`http://localhost:9700/api/prompts/${promptId}`, {
+    method: 'DELETE',
+    headers: headers
+});
+
+const result = await response.json();
+console.log(result.message);
+```
+
+**Error Responses:**
+- `403 Forbidden`: You can only delete your own prompts
+- `404 Not Found`: Prompt not found
+
 ---
 
 ## 📚 Document Ingestion
@@ -585,18 +915,18 @@ The ingestion system processes multiple document formats and stores them as sear
 ```mermaid
 graph LR
     A[User 1 Documents] --> B[User 1 Embeddings]
-    C[User 2 Documents] --> D[User 2 Embeddings] 
+    C[User 2 Documents] --> D[User 2 Embeddings]
     E[User 3 Documents] --> F[User 3 Embeddings]
-    
+
     B --> G[Qdrant Vector DB]
     D --> G
     F --> G
-    
+
     G --> H{Query with User Filter}
     H --> I[Only User's Results]
-    
+
     style B fill:#e3f2fd
-    style D fill:#fff3e0  
+    style D fill:#fff3e0
     style F fill:#e8f5e8
     style I fill:#fce4ec
 ```
@@ -606,6 +936,53 @@ graph LR
 - **Persistence**: Documents remain available across all your sessions
 - **Searchability**: All your content is searchable from any session
 - **Scalability**: Add unlimited documents without performance degradation
+
+### Document Lifecycle Patterns
+
+BrandGPT supports two document lifecycle patterns to fit different use cases:
+
+**1. Persistent Documents (with `group_id`)**
+- Documents tagged with a `group_id` are persistent across sessions
+- Survive session deletion and remain available indefinitely
+- Ideal for: Knowledge bases, reference materials, company documents
+- Example: Product catalogs, technical documentation, research papers
+
+**2. Temporary Documents (without `group_id`)**
+- Documents without a `group_id` are scoped to a specific session
+- Automatically deleted when the session is deleted
+- Ideal for: Temporary analysis, one-time uploads, experimental data
+- Example: Draft documents, temporary notes, test data
+
+**Usage Example:**
+```python
+# Persistent document - survives session deletion
+persistent_data = {
+    "data": {"product": "Widget", "price": 99.99},
+    "group_id": "product_catalog",  # Makes it persistent
+    "session_id": session_id
+}
+
+# Temporary document - deleted with session
+temporary_data = {
+    "data": {"draft": "analysis notes..."},
+    "session_id": session_id  # No group_id = temporary
+}
+```
+
+**Session Deletion Behavior:**
+```mermaid
+graph TD
+    A[Delete Session] --> B{Check Documents}
+    B -->|Has group_id| C[Keep Document]
+    B -->|No group_id| D[Delete Document]
+    C --> E[Document Available in Future Sessions]
+    D --> F[Document Removed from Vector DB]
+
+    style C fill:#c8e6c9
+    style D fill:#ffcdd2
+    style E fill:#a5d6a7
+    style F fill:#ef9a9a
+```
 
 ### File Upload (PDF, Text, JSON)
 Processes and stores uploaded files with automatic format detection.
@@ -913,14 +1290,14 @@ Monitor the processing status of ingested documents.
     "id": 456,
     "session_id": "abc123-def456-ghi789",
     "filename": "business_report.pdf",
-    "content_type": "pdf", 
+    "content_type": "pdf",
     "processed": "completed",
     "processed_at": "2024-01-15T10:35:00",
     "error_message": null
   },
   {
     "id": 789,
-    "session_id": "abc123-def456-ghi789", 
+    "session_id": "abc123-def456-ghi789",
     "url": "https://example.com/article",
     "content_type": "url",
     "processed": "processing",
@@ -928,6 +1305,116 @@ Monitor the processing status of ingested documents.
     "error_message": null
   }
 ]
+```
+
+### Delete Documents
+Remove documents from your knowledge base with flexible deletion options.
+
+**Endpoint:** `DELETE /api/data`
+
+**Authentication:** Required
+
+**Request Body (choose one deletion method):**
+
+**Option 1: Delete by Group ID**
+```json
+{
+  "group_id": "products_2024"
+}
+```
+
+**Option 2: Delete by Session ID**
+```json
+{
+  "session_id": "abc123-def456-ghi789"
+}
+```
+
+**Option 3: Delete by Document ID**
+```json
+{
+  "document_id": 456
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "deleted_count": 3,
+  "message": "Successfully deleted 3 documents"
+}
+```
+
+**Python Example:**
+```python
+# Delete all documents in a group
+delete_request = {"group_id": "test_data_2024"}
+response = requests.delete(
+    "http://localhost:9700/api/data",
+    json=delete_request,
+    headers=headers
+)
+
+result = response.json()
+print(f"Deleted {result['deleted_count']} documents")
+
+# Delete a specific document
+response = requests.delete(
+    "http://localhost:9700/api/data",
+    json={"document_id": 456},
+    headers=headers
+)
+
+# Delete all documents in a session
+response = requests.delete(
+    "http://localhost:9700/api/data",
+    json={"session_id": session_id},
+    headers=headers
+)
+```
+
+**JavaScript Example:**
+```javascript
+// Delete documents by group
+const deleteResponse = await fetch('http://localhost:9700/api/data', {
+    method: 'DELETE',
+    headers: headers,
+    body: JSON.stringify({ group_id: 'test_data_2024' })
+});
+
+const result = await deleteResponse.json();
+console.log(`Deleted ${result.deleted_count} documents`);
+```
+
+**Important Notes:**
+- Deletion removes both database records and vector embeddings
+- User isolation is enforced - you can only delete your own documents
+- Deletion is permanent and cannot be undone
+- At least one deletion criterion must be provided
+
+**Shortcut Endpoint: Delete by Group ID**
+
+**Endpoint:** `DELETE /api/documents/group/{group_id}`
+
+**Authentication:** Required
+
+**Response:** `200 OK`
+```json
+{
+  "deleted_count": 3,
+  "message": "Successfully deleted 3 documents from group test_data_2024"
+}
+```
+
+**Python Example:**
+```python
+group_id = "test_data_2024"
+response = requests.delete(
+    f"http://localhost:9700/api/documents/group/{group_id}",
+    headers=headers
+)
+
+print(response.json()["message"])
 ```
 
 ---
@@ -965,7 +1452,7 @@ sequenceDiagram
 ```
 
 ### Query Documents
-Search your documents and get AI-generated responses with source attribution.
+Search your documents and get AI-generated responses with source attribution and conversation memory.
 
 **Endpoint:** `POST /api/query`
 
@@ -983,9 +1470,17 @@ Search your documents and get AI-generated responses with source attribution.
 
 **Parameters:**
 - `query` (string): Your question or search query
-- `session_id` (string, optional): Session ID for conversation context
+- `session_id` (string, optional): Session ID for conversation context and history
 - `use_system_prompt` (boolean): Whether to use session's AI persona (default: true)
 - `group_id` (string, optional): Filter results by group ID for content organization (v1 compatibility)
+
+**Conversation Memory:**
+When a `session_id` is provided, the system automatically:
+- Retrieves the last 10 messages from the session for context
+- Stores your current query as a user message
+- Stores the AI response as an assistant message
+- Uses conversation history to provide context-aware responses
+- Enables natural multi-turn dialogues with follow-up questions
 
 **Response:** `200 OK`
 ```json
@@ -1111,6 +1606,76 @@ result.sources.forEach((source, index) => {
 - **Advanced Reranking**: Uses cross-encoder models to improve relevance
 - **Source Attribution**: Always shows which documents contributed to the answer
 - **Persona Consistency**: Maintains AI persona behavior across queries
+- **Conversation Memory**: Remembers previous messages for context-aware responses
+- **Multi-Turn Dialogues**: Natural follow-up questions that reference earlier context
+
+### Multi-Turn Conversation Example
+
+```python
+# First query in a session
+query1 = {
+    "query": "What are the key insights from the business report?",
+    "session_id": session_id,
+    "use_system_prompt": True
+}
+
+response1 = requests.post("http://localhost:9700/api/query", json=query1, headers=headers)
+print("AI:", response1.json()["response"])
+# AI: "The report highlights three key insights: 1) Revenue growth of 25% YoY..."
+
+# Follow-up question - AI remembers the previous context
+query2 = {
+    "query": "What's driving that revenue growth?",  # References "that" from previous answer
+    "session_id": session_id,  # Same session = conversation memory
+    "use_system_prompt": True
+}
+
+response2 = requests.post("http://localhost:9700/api/query", json=query2, headers=headers)
+print("AI:", response2.json()["response"])
+# AI: "The revenue growth is primarily driven by..." (understands context)
+
+# Another follow-up
+query3 = {
+    "query": "How does this compare to our competitors?",
+    "session_id": session_id,
+    "use_system_prompt": True
+}
+
+response3 = requests.post("http://localhost:9700/api/query", json=query3, headers=headers)
+# AI understands "this" refers to the revenue growth mentioned earlier
+```
+
+**Conversation Flow:**
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant DB as Message Storage
+    participant LLM as Ollama LLM
+
+    User->>API: Query 1: "What are the key insights?"
+    API->>DB: Retrieve conversation history (0 messages)
+    API->>LLM: Generate response with context
+    LLM-->>API: Response
+    API->>DB: Store user message + AI response
+    API-->>User: Response
+
+    User->>API: Query 2: "What's driving that growth?"
+    API->>DB: Retrieve conversation history (2 messages)
+    Note over API,LLM: AI now knows "that" refers to<br/>the growth mentioned in Query 1
+    API->>LLM: Generate response with full context
+    LLM-->>API: Context-aware response
+    API->>DB: Store new messages
+    API-->>User: Response
+
+    User->>API: Query 3: "How does this compare?"
+    API->>DB: Retrieve conversation history (4 messages)
+    Note over API,LLM: Full conversation context enables<br/>natural dialogue
+    API->>LLM: Generate response
+    LLM-->>API: Response
+    API->>DB: Store messages
+    API-->>User: Response
+```
 
 ---
 
@@ -1236,10 +1801,10 @@ class BrandGPTClient:
         }
         if session_id:
             query_data["session_id"] = session_id
-        
+
         response = self.session.post(f"{self.base_url}/api/query", json=query_data)
         result = response.json()
-        
+
         print(f"\n🤖 AI Response:")
         print(result["response"])
         print(f"\n📚 Based on {len(result['sources'])} sources:")
@@ -1247,8 +1812,21 @@ class BrandGPTClient:
             metadata = source["metadata"]
             source_info = metadata.get("filename") or metadata.get("url", "Unknown")
             print(f"  {i}. {source_info}")
-        
+
         return result
+
+    def get_chat_history(self, session_id):
+        """Retrieve conversation history"""
+        response = self.session.get(f"{self.base_url}/api/sessions/{session_id}/messages")
+        messages = response.json()
+
+        print(f"\n💬 Conversation History ({len(messages)} messages):")
+        for msg in messages:
+            role = "👤 User" if msg["role"] == "user" else "🤖 AI"
+            print(f"\n{role}:")
+            print(f"  {msg['content'][:150]}...")
+
+        return messages
 
 # Complete workflow example
 def main():
@@ -1292,16 +1870,45 @@ def main():
     
     # 7. Query with different personas
     query = "What are the key principles and best practices mentioned in the content?"
-    
+
     print("\n" + "="*60)
     print("BUSINESS STRATEGIST PERSPECTIVE:")
     print("="*60)
     client.query_documents(query, business_session, use_persona=True)
-    
+
     print("\n" + "="*60)
     print("TECHNICAL ARCHITECT PERSPECTIVE:")
     print("="*60)
     client.query_documents(query, technical_session, use_persona=True)
+
+    # 8. Multi-turn conversation with context
+    print("\n" + "="*60)
+    print("MULTI-TURN CONVERSATION DEMO:")
+    print("="*60)
+
+    # First question
+    client.query_documents(
+        "What is the main topic discussed?",
+        business_session,
+        use_persona=True
+    )
+
+    # Follow-up question (AI remembers context)
+    client.query_documents(
+        "Can you elaborate on that?",  # "that" refers to previous answer
+        business_session,
+        use_persona=True
+    )
+
+    # Another follow-up
+    client.query_documents(
+        "What are the practical implications?",
+        business_session,
+        use_persona=True
+    )
+
+    # 9. View conversation history
+    client.get_chat_history(business_session)
 
 if __name__ == "__main__":
     main()
@@ -1416,15 +2023,15 @@ class BrandGPTClient {
             use_system_prompt: usePersona
         };
         if (sessionId) queryData.session_id = sessionId;
-        
+
         const response = await fetch(`${this.baseUrl}/api/query`, {
             method: 'POST',
             headers: this.headers,
             body: JSON.stringify(queryData)
         });
-        
+
         const result = await response.json();
-        
+
         console.log('\n🤖 AI Response:');
         console.log(result.response);
         console.log(`\n📚 Based on ${result.sources.length} sources:`);
@@ -1433,8 +2040,25 @@ class BrandGPTClient {
             const sourceInfo = metadata.filename || metadata.url || 'Unknown';
             console.log(`  ${i + 1}. ${sourceInfo}`);
         });
-        
+
         return result;
+    }
+
+    async getChatHistory(sessionId) {
+        const response = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/messages`, {
+            headers: this.headers
+        });
+
+        const messages = await response.json();
+
+        console.log(`\n💬 Conversation History (${messages.length} messages):`);
+        messages.forEach(msg => {
+            const role = msg.role === 'user' ? '👤 User' : '🤖 AI';
+            console.log(`\n${role}:`);
+            console.log(`  ${msg.content.substring(0, 150)}...`);
+        });
+
+        return messages;
     }
 }
 
@@ -1463,6 +2087,18 @@ async function main() {
         sessionId,
         true
     );
+
+    // Multi-turn conversation
+    console.log('\n' + '='.repeat(60));
+    console.log('MULTI-TURN CONVERSATION DEMO:');
+    console.log('='.repeat(60));
+
+    await client.queryDocuments('What is the main topic?', sessionId, true);
+    await client.queryDocuments('Can you provide more details about that?', sessionId, true);
+    await client.queryDocuments('What are the practical applications?', sessionId, true);
+
+    // View conversation history
+    await client.getChatHistory(sessionId);
 }
 
 main().catch(console.error);
