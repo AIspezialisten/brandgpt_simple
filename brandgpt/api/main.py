@@ -14,7 +14,7 @@ from brandgpt.api.auth import (
     get_current_user,
     get_password_hash
 )
-from brandgpt.models import get_db, User, Session as DBSession, Prompt, Document
+from brandgpt.models import get_db, User, Session as DBSession, Prompt, Document, Message
 from brandgpt.config import settings
 from brandgpt.ingestion import IngestionPipeline
 from brandgpt.retrieval import RAGGraph
@@ -269,6 +269,14 @@ async def delete_session(
         db.delete(document)
         deleted_doc_count += 1
 
+    # Delete chat messages
+    messages = db.query(Message).filter(Message.session_id == session_id).all()
+    deleted_message_count = len(messages)
+    for message in messages:
+        db.delete(message)
+
+    logger.info(f"Deleting session {session_id}: {deleted_doc_count} documents, {deleted_message_count} messages")
+
     # Delete the session
     db.delete(session)
     db.commit()
@@ -276,8 +284,41 @@ async def delete_session(
     return {
         "message": f"Session deleted successfully",
         "session_id": session_id,
-        "deleted_documents": deleted_doc_count
+        "deleted_documents": deleted_doc_count,
+        "deleted_messages": deleted_message_count
     }
+
+
+@app.get("/api/sessions/{session_id}/messages", response_model=List[schemas.MessageResponse])
+async def get_session_messages(
+    session_id: str,
+    limit: Optional[int] = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get chat history for a session.
+
+    Returns messages in chronological order (oldest first).
+    Use limit to control how many recent messages to retrieve.
+    """
+    # Verify session belongs to user
+    session = db.query(DBSession).filter(
+        DBSession.id == session_id,
+        DBSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Get messages for this session, ordered by creation time
+    messages = db.query(Message).filter(
+        Message.session_id == session_id
+    ).order_by(Message.created_at.asc()).limit(limit).all()
+
+    return messages
 
 
 # Prompt endpoints
@@ -592,31 +633,76 @@ async def query(
     db: Session = Depends(get_db)
 ):
     system_prompt = None
-    
-    if request.session_id and request.use_system_prompt:
-        # Get session and its prompt
+    session = None
+
+    if request.session_id:
+        # Get session
         session = db.query(DBSession).filter(
             DBSession.id == request.session_id,
             DBSession.user_id == current_user.id
         ).first()
-        
-        if session:
+
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
+
+        if request.use_system_prompt:
             if session.system_prompt:
                 system_prompt = session.system_prompt
             elif session.prompt_id:
                 prompt = db.query(Prompt).filter(Prompt.id == session.prompt_id).first()
                 if prompt:
                     system_prompt = prompt.content
-    
+
+        # Get conversation history (last 10 messages before this query)
+        history_messages = db.query(Message).filter(
+            Message.session_id == request.session_id
+        ).order_by(Message.created_at.desc()).limit(10).all()
+
+        # Reverse to get chronological order (oldest first)
+        history_messages.reverse()
+
+        # Store user message
+        user_message = Message(
+            session_id=request.session_id,
+            user_id=current_user.id,
+            role="user",
+            content=request.query
+        )
+        db.add(user_message)
+        db.commit()
+
+        # Convert history to list of dicts for RAG pipeline
+        conversation_history = [
+            {"role": msg.role, "content": msg.content}
+            for msg in history_messages
+        ]
+    else:
+        conversation_history = []
+
     # Process query through RAG pipeline
     result = await rag_graph.process_query(
         query=request.query,
         user_id=current_user.id,
         group_id=request.group_id,
         session_id=request.session_id,
-        system_prompt=system_prompt
+        system_prompt=system_prompt,
+        conversation_history=conversation_history
     )
-    
+
+    # Store assistant response if session_id is provided
+    if request.session_id:
+        assistant_message = Message(
+            session_id=request.session_id,
+            user_id=current_user.id,
+            role="assistant",
+            content=result["response"]
+        )
+        db.add(assistant_message)
+        db.commit()
+
     return schemas.QueryResponse(**result)
 
 

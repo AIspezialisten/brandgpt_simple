@@ -127,3 +127,16 @@ class DeleteResponse(BaseModel):
     """Response for delete operations."""
     deleted_count: int
     message: str
+
+
+class MessageResponse(BaseModel):
+    """Response schema for chat messages."""
+    id: int
+    session_id: str
+    user_id: int
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

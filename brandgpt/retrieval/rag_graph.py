@@ -14,6 +14,7 @@ class RAGState(TypedDict):
     group_id: Optional[str]
     session_id: Optional[str]
     system_prompt: Optional[str]
+    conversation_history: List[Dict[str, str]]
     retrieved_docs: List[Dict[str, Any]]
     reranked_docs: List[Dict[str, Any]]
     context: List[str]
@@ -139,11 +140,12 @@ class RAGGraph:
             if not state["context"]:
                 state["response"] = "I couldn't find any relevant information to answer your question."
                 return state
-            
+
             response = await self.llm_service.generate_response(
                 query=state["query"],
                 context=state["context"],
-                system_prompt=state.get("system_prompt")
+                system_prompt=state.get("system_prompt"),
+                conversation_history=state.get("conversation_history", [])
             )
             state["response"] = response
             logger.info("Generated response")
@@ -151,7 +153,7 @@ class RAGGraph:
             logger.error(f"Error generating response: {str(e)}")
             state["response"] = f"An error occurred while generating the response: {str(e)}"
             state["error"] = str(e)
-        
+
         return state
     
     async def process_query(
@@ -160,7 +162,8 @@ class RAGGraph:
         user_id: Optional[int] = None,
         group_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         initial_state: RAGState = {
             "query": query,
@@ -168,6 +171,7 @@ class RAGGraph:
             "group_id": group_id,
             "session_id": session_id,
             "system_prompt": system_prompt,
+            "conversation_history": conversation_history or [],
             "retrieved_docs": [],
             "reranked_docs": [],
             "context": [],

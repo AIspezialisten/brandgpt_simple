@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from langchain_ollama import ChatOllama
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-from langchain.schema import BaseMessage
+from langchain.schema import BaseMessage, HumanMessage, AIMessage
 from brandgpt.config import settings
 import logging
 
@@ -22,37 +22,42 @@ class LLMService:
         self,
         query: str,
         context: List[str],
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> str:
         try:
             default_system_prompt = """You are a helpful AI assistant that answers questions based on the provided context.
             Use the context to provide accurate and relevant answers.
             If the answer cannot be found in the context, say so clearly."""
-            
+
             system_prompt = system_prompt or default_system_prompt
-            
+
             # Format context
             formatted_context = "\n\n".join(context)
-            
-            # Create prompt
-            prompt = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_prompt),
-                HumanMessagePromptTemplate.from_template(
-                    "Context:\n{context}\n\nQuestion: {question}\n\nAnswer:"
-                )
-            ])
-            
+
+            # Build messages list
+            messages: List[BaseMessage] = [
+                SystemMessagePromptTemplate.from_template(system_prompt).format()
+            ]
+
+            # Add conversation history if available
+            if conversation_history:
+                for msg in conversation_history:
+                    if msg["role"] == "user":
+                        messages.append(HumanMessage(content=msg["content"]))
+                    elif msg["role"] == "assistant":
+                        messages.append(AIMessage(content=msg["content"]))
+
+            # Add current query with context
+            current_query = f"Context:\n{formatted_context}\n\nQuestion: {query}\n\nAnswer:"
+            messages.append(HumanMessage(content=current_query))
+
             # Generate response
-            messages = prompt.format_messages(
-                context=formatted_context,
-                question=query
-            )
-            
             response = await self.llm.ainvoke(messages)
-            
-            logger.info("Generated LLM response")
+
+            logger.info("Generated LLM response with conversation history")
             return response.content
-            
+
         except Exception as e:
             logger.error(f"Error generating LLM response: {str(e)}")
             raise
