@@ -987,41 +987,53 @@ graph TD
 ### File Upload (PDF, Text, JSON)
 Processes and stores uploaded files with automatic format detection.
 
-**Endpoint:** `POST /api/ingest/file/{session_id}`
+**Endpoint:** `POST /api/ingest/file`
 
 **Authentication:** Required
 
 **Request:** Multipart form data with file upload
 
+**Form Parameters:**
+- `file` (required): The file to upload
+- `session_id` (optional): Session ID to associate with the document
+- `group_id` (optional): Group ID for persistent document organization
+
 **Python Example:**
 ```python
-# Upload PDF document
+# Upload PDF document with session_id
 session_id = "abc123-def456-ghi789"
 with open("business_report.pdf", "rb") as file:
     files = {"file": ("business_report.pdf", file, "application/pdf")}
+    data = {"session_id": session_id}
     response = requests.post(
-        f"http://localhost:9700/api/ingest/file/{session_id}",
+        "http://localhost:9700/api/ingest/file",
         files=files,
+        data=data,
         headers={"Authorization": f"Bearer {access_token}"}  # Note: no Content-Type for multipart
     )
 
 result = response.json()
 print(f"Document ingestion started: {result['document_id']}")
 
-# Upload JSON data
+# Upload with group_id for persistent storage
 with open("company_data.json", "rb") as file:
     files = {"file": ("company_data.json", file, "application/json")}
+    data = {
+        "session_id": session_id,
+        "group_id": "company_docs_2024"  # Makes it persistent
+    }
     response = requests.post(
-        f"http://localhost:9700/api/ingest/file/{session_id}",
+        "http://localhost:9700/api/ingest/file",
         files=files,
+        data=data,
         headers={"Authorization": f"Bearer {access_token}"}
     )
 
-# Upload text file  
+# Upload text file without session (user-scoped only)
 with open("research_notes.txt", "rb") as file:
     files = {"file": ("research_notes.txt", file, "text/plain")}
     response = requests.post(
-        f"http://localhost:9700/api/ingest/file/{session_id}",
+        "http://localhost:9700/api/ingest/file",
         files=files,
         headers={"Authorization": f"Bearer {access_token}"}
     )
@@ -1036,8 +1048,10 @@ const file = fileInput.files[0];
 
 const formData = new FormData();
 formData.append('file', file);
+formData.append('session_id', sessionId);
+formData.append('group_id', 'company_docs_2024');  // Optional: for persistent storage
 
-const response = await fetch(`http://localhost:9700/api/ingest/file/${sessionId}`, {
+const response = await fetch('http://localhost:9700/api/ingest/file', {
     method: 'POST',
     headers: {
         'Authorization': `Bearer ${accessToken}`
@@ -1391,31 +1405,7 @@ console.log(`Deleted ${result.deleted_count} documents`);
 - User isolation is enforced - you can only delete your own documents
 - Deletion is permanent and cannot be undone
 - At least one deletion criterion must be provided
-
-**Shortcut Endpoint: Delete by Group ID**
-
-**Endpoint:** `DELETE /api/documents/group/{group_id}`
-
-**Authentication:** Required
-
-**Response:** `200 OK`
-```json
-{
-  "deleted_count": 3,
-  "message": "Successfully deleted 3 documents from group test_data_2024"
-}
-```
-
-**Python Example:**
-```python
-group_id = "test_data_2024"
-response = requests.delete(
-    f"http://localhost:9700/api/documents/group/{group_id}",
-    headers=headers
-)
-
-print(response.json()["message"])
-```
+- Only one criterion can be used per request
 
 ---
 
@@ -1748,15 +1738,19 @@ class BrandGPTClient:
         print(f"✅ Created session: {session['id']}")
         return session["id"]
     
-    def upload_document(self, session_id, file_path):
+    def upload_document(self, session_id, file_path, group_id=None):
         """Upload and process a document"""
         with open(file_path, 'rb') as file:
             files = {"file": (file_path, file)}
+            data = {"session_id": session_id}
+            if group_id:
+                data["group_id"] = group_id
             response = self.session.post(
-                f"{self.base_url}/api/ingest/file/{session_id}",
-                files=files
+                f"{self.base_url}/api/ingest/file",
+                files=files,
+                data=data
             )
-        
+
         result = response.json()
         print(f"✅ Document uploaded: {file_path} (Doc ID: {result['document_id']})")
         return result["document_id"]
