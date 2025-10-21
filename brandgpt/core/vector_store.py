@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 from langchain_qdrant import QdrantVectorStore
 from langchain.schema import Document as LangchainDocument
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from brandgpt.config import settings
 from brandgpt.core.embeddings import EmbeddingService
 import uuid
@@ -152,13 +152,14 @@ class VectorStore:
         try:
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector={
-                    "filter": {
-                        "must": [
-                            {"key": "session_id", "match": {"value": session_id}}
-                        ]
-                    }
-                }
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="session_id",
+                            match=MatchValue(value=session_id)
+                        )
+                    ]
+                )
             )
             logger.info(f"Deleted documents for session: {session_id}")
         except Exception as e:
@@ -170,13 +171,14 @@ class VectorStore:
         try:
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector={
-                    "filter": {
-                        "must": [
-                            {"key": "document_id", "match": {"value": document_id}}
-                        ]
-                    }
-                }
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchValue(value=document_id)
+                        )
+                    ]
+                )
             )
             logger.info(f"Deleted vectors for document: {document_id}")
         except Exception as e:
@@ -188,14 +190,18 @@ class VectorStore:
         try:
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector={
-                    "filter": {
-                        "must": [
-                            {"key": "group_id", "match": {"value": group_id}},
-                            {"key": "user_id", "match": {"value": user_id}}
-                        ]
-                    }
-                }
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(
+                            key="group_id",
+                            match=MatchValue(value=group_id)
+                        ),
+                        FieldCondition(
+                            key="user_id",
+                            match=MatchValue(value=user_id)
+                        )
+                    ]
+                )
             )
             logger.info(f"Deleted vectors for group_id: {group_id} (user: {user_id})")
         except Exception as e:
