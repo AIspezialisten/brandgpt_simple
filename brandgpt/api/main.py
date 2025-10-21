@@ -380,8 +380,7 @@ async def ingest_file(
         file.filename,
         document.id,
         session_id,
-        current_user.id,
-        db
+        current_user.id
     )
     
     return schemas.IngestionStatus(
@@ -432,8 +431,7 @@ async def ingest_url(
         document.id,
         data.session_id,
         current_user.id,
-        data.max_depth,
-        db
+        data.max_depth
     )
     
     return schemas.IngestionStatus(
@@ -508,8 +506,7 @@ async def ingest_structured_data(
         document.id,
         session_id,
         current_user.id,
-        data.group_id,
-        db
+        data.group_id
     )
     
     return schemas.StructuredDataResponse(
@@ -526,10 +523,13 @@ async def process_structured_data_task(
     document_id: int,
     session_id: Optional[str],
     user_id: int,
-    group_id: Optional[str],
-    db: Session
+    group_id: Optional[str]
 ):
     """Background task to process structured data."""
+    from brandgpt.models import SessionLocal
+
+    # Create a new database session for this background task
+    db = SessionLocal()
     try:
         # Process data
         metadata = {
@@ -538,9 +538,9 @@ async def process_structured_data_task(
             "session_id": session_id,
             "group_id": group_id
         }
-        
+
         documents = processor.process(data, metadata)
-        
+
         if documents:
             # Store in vector database
             from brandgpt.core.vector_store import VectorStore
@@ -552,7 +552,7 @@ async def process_structured_data_task(
                 document_id=document_id,
                 group_id=group_id
             )
-            
+
             # Update document status
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
@@ -562,19 +562,26 @@ async def process_structured_data_task(
                     "chunks_created": len(documents)
                 }
                 db.commit()
-                
+
             logger.info(f"Structured data ingestion completed: {len(documents)} chunks")
         else:
             logger.error("No documents generated from structured data")
-            
+
     except Exception as e:
         logger.error(f"Error processing structured data: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # Update document status to failed
-        doc = db.query(Document).filter(Document.id == document_id).first()
-        if doc:
-            doc.status = "failed"
-            doc.doc_metadata = {**doc.doc_metadata, "error": str(e)}
-            db.commit()
+        try:
+            doc = db.query(Document).filter(Document.id == document_id).first()
+            if doc:
+                doc.status = "failed"
+                doc.doc_metadata = {**doc.doc_metadata, "error": str(e)}
+                db.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update document status: {str(db_error)}")
+    finally:
+        db.close()
 
 
 # Query endpoint

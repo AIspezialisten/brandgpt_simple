@@ -28,15 +28,18 @@ class IngestionPipeline:
         filename: str,
         document_id: int,
         session_id: str,
-        user_id: int,
-        db: Session
+        user_id: int
     ):
+        from brandgpt.models import SessionLocal
+
+        # Create a new database session for this background task
+        db = SessionLocal()
         try:
             # Update document status
             document = db.query(Document).filter(Document.id == document_id).first()
             if not document:
                 return
-            
+
             document.processed = "processing"
             db.commit()
             
@@ -110,14 +113,21 @@ class IngestionPipeline:
             finally:
                 # Clean up temporary file
                 os.unlink(file_path)
-                
+
         except Exception as e:
             logger.error(f"Error processing file: {str(e)}")
-            document = db.query(Document).filter(Document.id == document_id).first()
-            if document:
-                document.processed = "failed"
-                document.error_message = str(e)
-                db.commit()
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            try:
+                document = db.query(Document).filter(Document.id == document_id).first()
+                if document:
+                    document.processed = "failed"
+                    document.error_message = str(e)
+                    db.commit()
+            except Exception as db_error:
+                logger.error(f"Failed to update document status: {str(db_error)}")
+        finally:
+            db.close()
 
     async def process_file(
         self,
@@ -142,15 +152,18 @@ class IngestionPipeline:
         document_id: int,
         session_id: str,
         user_id: int,
-        max_depth: Optional[int],
-        db: Session
+        max_depth: Optional[int]
     ):
+        from brandgpt.models import SessionLocal
+
+        # Create a new database session for this background task
+        db = SessionLocal()
         try:
             # Update document status
             document = db.query(Document).filter(Document.id == document_id).first()
             if not document:
                 return
-            
+
             document.processed = "processing"
             db.commit()
             
@@ -179,11 +192,18 @@ class IngestionPipeline:
             db.commit()
             
             logger.info(f"Successfully processed URL: {url}")
-            
+
         except Exception as e:
             logger.error(f"Error processing URL: {str(e)}")
-            document = db.query(Document).filter(Document.id == document_id).first()
-            if document:
-                document.processed = "failed"
-                document.error_message = str(e)
-                db.commit()
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            try:
+                document = db.query(Document).filter(Document.id == document_id).first()
+                if document:
+                    document.processed = "failed"
+                    document.error_message = str(e)
+                    db.commit()
+            except Exception as db_error:
+                logger.error(f"Failed to update document status: {str(db_error)}")
+        finally:
+            db.close()
