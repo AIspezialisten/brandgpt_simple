@@ -35,13 +35,19 @@ class SessionCreate(BaseModel):
     system_prompt: Optional[str] = None
 
 
+class SessionUpdate(BaseModel):
+    prompt_id: Optional[int] = None
+    system_prompt: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=200, description="Optional session name")
+
+
 class SessionResponse(BaseModel):
     id: str
     user_id: int
     prompt_id: Optional[int]
     system_prompt: Optional[str]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -52,6 +58,12 @@ class PromptCreate(BaseModel):
     content: str = Field(..., min_length=1)
 
 
+class PromptUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    content: Optional[str] = Field(None, min_length=1)
+
+
 class PromptResponse(BaseModel):
     id: int
     name: str
@@ -59,7 +71,7 @@ class PromptResponse(BaseModel):
     content: str
     created_by: int
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 

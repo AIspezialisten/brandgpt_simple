@@ -218,6 +218,75 @@ async def list_sessions(
     return sessions
 
 
+@app.get("/api/sessions/{session_id}", response_model=schemas.SessionResponse)
+async def get_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific session by ID."""
+    session = db.query(DBSession).filter(
+        DBSession.id == session_id,
+        DBSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    return session
+
+
+@app.patch("/api/sessions/{session_id}", response_model=schemas.SessionResponse)
+async def update_session(
+    session_id: str,
+    session_data: schemas.SessionUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a session's prompt or system prompt.
+
+    You can either:
+    - Set prompt_id to use a saved prompt template
+    - Set system_prompt to use a custom system prompt
+    - Set both to null to use the default system prompt
+    """
+    session = db.query(DBSession).filter(
+        DBSession.id == session_id,
+        DBSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Validate prompt_id exists if provided
+    if session_data.prompt_id is not None:
+        prompt = db.query(Prompt).filter(Prompt.id == session_data.prompt_id).first()
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Prompt with ID {session_data.prompt_id} not found"
+            )
+
+    # Update only provided fields
+    if session_data.prompt_id is not None:
+        session.prompt_id = session_data.prompt_id
+    if session_data.system_prompt is not None:
+        session.system_prompt = session_data.system_prompt
+
+    db.commit()
+    db.refresh(session)
+
+    logger.info(f"Updated session {session_id}: prompt_id={session.prompt_id}, has_custom_prompt={bool(session.system_prompt)}")
+
+    return session
+
+
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(
     session_id: str,
@@ -348,6 +417,97 @@ async def list_prompts(
 ):
     prompts = db.query(Prompt).all()
     return prompts
+
+
+@app.get("/api/prompts/{prompt_id}", response_model=schemas.PromptResponse)
+async def get_prompt(
+    prompt_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific prompt by ID."""
+    prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prompt not found"
+        )
+
+    return prompt
+
+
+@app.put("/api/prompts/{prompt_id}", response_model=schemas.PromptResponse)
+async def update_prompt(
+    prompt_id: int,
+    prompt_data: schemas.PromptUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a prompt. Only the creator can update their prompts."""
+    prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prompt not found"
+        )
+
+    # Check if user is the creator
+    if prompt.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only update your own prompts"
+        )
+
+    # Update only provided fields
+    if prompt_data.name is not None:
+        prompt.name = prompt_data.name
+    if prompt_data.description is not None:
+        prompt.description = prompt_data.description
+    if prompt_data.content is not None:
+        prompt.content = prompt_data.content
+
+    db.commit()
+    db.refresh(prompt)
+
+    return prompt
+
+
+@app.delete("/api/prompts/{prompt_id}")
+async def delete_prompt(
+    prompt_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a prompt. Only the creator can delete their prompts."""
+    prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prompt not found"
+        )
+
+    # Check if user is the creator
+    if prompt.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own prompts"
+        )
+
+    # Check if any sessions are using this prompt
+    sessions_using_prompt = db.query(DBSession).filter(DBSession.prompt_id == prompt_id).count()
+    if sessions_using_prompt > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete prompt: {sessions_using_prompt} session(s) are using it"
+        )
+
+    db.delete(prompt)
+    db.commit()
+
+    return {"message": f"Prompt '{prompt.name}' deleted successfully"}
 
 
 # Ingestion endpoints
