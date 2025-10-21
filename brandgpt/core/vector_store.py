@@ -104,25 +104,29 @@ class VectorStore:
         query: str,
         user_id: Optional[int] = None,
         group_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         limit: int = 20,
         score_threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
         self._ensure_initialized()
         try:
             query_embedding = await self.embedding_service.embed_query(query)
-            
+
             filter_conditions = None
             must_conditions = []
-            
+
             if user_id:
                 must_conditions.append({"key": "user_id", "match": {"value": user_id}})
-            
+
             if group_id:
                 must_conditions.append({"key": "group_id", "match": {"value": group_id}})
-            
+
+            if session_id:
+                must_conditions.append({"key": "session_id", "match": {"value": session_id}})
+
             if must_conditions:
                 filter_conditions = {"must": must_conditions}
-            
+
             results = self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
@@ -130,7 +134,7 @@ class VectorStore:
                 query_filter=filter_conditions,
                 score_threshold=score_threshold
             )
-            
+
             documents = []
             for result in results:
                 documents.append({
@@ -139,10 +143,10 @@ class VectorStore:
                     "score": result.score,
                     "metadata": {k: v for k, v in result.payload.items() if k != "text"}
                 })
-            
+
             logger.info(f"Found {len(documents)} documents for query")
             return documents
-            
+
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}")
             raise

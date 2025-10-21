@@ -12,6 +12,7 @@ class RAGState(TypedDict):
     query: str
     user_id: Optional[int]
     group_id: Optional[str]
+    session_id: Optional[str]
     system_prompt: Optional[str]
     retrieved_docs: List[Dict[str, Any]]
     reranked_docs: List[Dict[str, Any]]
@@ -63,6 +64,7 @@ class RAGGraph:
                 query=search_query,
                 user_id=state.get("user_id"),
                 group_id=state.get("group_id"),
+                session_id=state.get("session_id"),
                 limit=settings.reranker_candidates
             )
             state["retrieved_docs"] = documents
@@ -157,12 +159,14 @@ class RAGGraph:
         query: str,
         user_id: Optional[int] = None,
         group_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         initial_state: RAGState = {
             "query": query,
             "user_id": user_id,
             "group_id": group_id,
+            "session_id": session_id,
             "system_prompt": system_prompt,
             "retrieved_docs": [],
             "reranked_docs": [],

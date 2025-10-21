@@ -218,6 +218,68 @@ async def list_sessions(
     return sessions
 
 
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a session and its associated temporary documents.
+
+    This endpoint:
+    1. Verifies the session belongs to the current user
+    2. Deletes documents that were uploaded to this session WITHOUT a group_id (temporary documents)
+    3. Preserves documents that have a group_id (persistent documents)
+    4. Deletes the session itself
+    """
+    from brandgpt.core.vector_store import VectorStore
+
+    # Verify session belongs to user
+    session = db.query(DBSession).filter(
+        DBSession.id == session_id,
+        DBSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Find temporary documents (session_id exists, but group_id is NULL)
+    temp_documents = db.query(Document).filter(
+        Document.session_id == session_id,
+        Document.user_id == current_user.id,
+        Document.group_id == None
+    ).all()
+
+    # Delete vectors for temporary documents
+    vector_store = VectorStore()
+    deleted_doc_count = 0
+
+    for document in temp_documents:
+        try:
+            await vector_store.delete_by_document_id(document.id)
+            logger.info(f"Deleted vectors for temporary document {document.id}")
+        except Exception as e:
+            logger.error(f"Failed to delete vectors for document {document.id}: {str(e)}")
+
+    # Delete temporary documents from database
+    for document in temp_documents:
+        db.delete(document)
+        deleted_doc_count += 1
+
+    # Delete the session
+    db.delete(session)
+    db.commit()
+
+    return {
+        "message": f"Session deleted successfully",
+        "session_id": session_id,
+        "deleted_documents": deleted_doc_count
+    }
+
+
 # Prompt endpoints
 @app.post("/api/prompts", response_model=schemas.PromptResponse)
 async def create_prompt(
@@ -544,6 +606,7 @@ async def query(
         query=request.query,
         user_id=current_user.id,
         group_id=request.group_id,
+        session_id=request.session_id,
         system_prompt=system_prompt
     )
     
