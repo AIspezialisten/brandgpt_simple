@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Any, Annotated
 import uuid
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from brandgpt.api import schemas
 from brandgpt.api.auth import (
@@ -726,8 +726,12 @@ async def process_structured_data_task(
     user_id: int,
     group_id: Optional[str]
 ):
-    """Background task to process structured data."""
+    """Background task to process structured data with batch processing for large datasets."""
     from brandgpt.models import SessionLocal
+    import asyncio
+
+    # Batch size for processing - prevents timeouts with large datasets
+    BATCH_SIZE = 100  # Process 100 items at a time
 
     # Create a new database session for this background task
     db = SessionLocal()
@@ -741,32 +745,76 @@ async def process_structured_data_task(
         }
 
         documents = processor.process(data, metadata)
+        total_docs = len(documents) if documents else 0
 
         if documents:
-            # Store in vector database
+            logger.info(f"Processing {total_docs} documents in batches of {BATCH_SIZE}")
+
+            # Store in vector database with batch processing
             from brandgpt.core.vector_store import VectorStore
             vector_store = VectorStore()
-            await vector_store.add_documents(
-                documents=documents,
-                session_id=session_id,
-                user_id=user_id,
-                document_id=document_id,
-                group_id=group_id
-            )
 
-            # Update document status
+            # Process in batches
+            for batch_start in range(0, total_docs, BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, total_docs)
+                batch = documents[batch_start:batch_end]
+
+                logger.info(f"Processing batch {batch_start//BATCH_SIZE + 1}/{(total_docs + BATCH_SIZE - 1)//BATCH_SIZE}: items {batch_start+1}-{batch_end}")
+
+                try:
+                    await vector_store.add_documents(
+                        documents=batch,
+                        session_id=session_id,
+                        user_id=user_id,
+                        document_id=document_id,
+                        group_id=group_id
+                    )
+
+                    # Update progress in document metadata
+                    doc = db.query(Document).filter(Document.id == document_id).first()
+                    if doc:
+                        doc.doc_metadata = {
+                            **(doc.doc_metadata or {}),
+                            "processed_chunks": batch_end,
+                            "total_chunks": total_docs,
+                            "progress_percent": int((batch_end / total_docs) * 100)
+                        }
+                        db.commit()
+
+                    logger.info(f"Batch processed successfully: {batch_end}/{total_docs} documents")
+
+                    # Small pause between batches to avoid overwhelming the system
+                    if batch_end < total_docs:
+                        await asyncio.sleep(0.5)
+
+                except Exception as batch_error:
+                    logger.error(f"Error processing batch {batch_start}-{batch_end}: {str(batch_error)}")
+                    # Continue with next batch instead of failing completely
+                    continue
+
+            # Update final document status
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
                 doc.status = "completed"
+                doc.processed = "completed"
                 doc.doc_metadata = {
                     **(doc.doc_metadata or {}),
-                    "chunks_created": len(documents)
+                    "chunks_created": total_docs,
+                    "processed_chunks": total_docs,
+                    "progress_percent": 100
                 }
+                doc.processed_at = datetime.utcnow()
                 db.commit()
 
-            logger.info(f"Structured data ingestion completed: {len(documents)} chunks")
+            logger.info(f"Structured data ingestion completed: {total_docs} chunks processed in {(total_docs + BATCH_SIZE - 1)//BATCH_SIZE} batches")
         else:
             logger.error("No documents generated from structured data")
+            doc = db.query(Document).filter(Document.id == document_id).first()
+            if doc:
+                doc.status = "failed"
+                doc.processed = "failed"
+                doc.error_message = "No documents generated"
+                db.commit()
 
     except Exception as e:
         logger.error(f"Error processing structured data: {str(e)}")
@@ -777,7 +825,9 @@ async def process_structured_data_task(
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
                 doc.status = "failed"
-                doc.doc_metadata = {**doc.doc_metadata, "error": str(e)}
+                doc.processed = "failed"
+                doc.error_message = str(e)
+                doc.doc_metadata = {**(doc.doc_metadata or {}), "error": str(e)}
                 db.commit()
         except Exception as db_error:
             logger.error(f"Failed to update document status: {str(db_error)}")
