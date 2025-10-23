@@ -185,7 +185,8 @@ class VectorStore:
                 logger.info(f"Combined search: {len(filtered_group_results)} from group (filtered from {len(results_group)}) + {len(results_session)} from session = {len(results)} total")
 
             elif group_id:
-                # Only group_id: Find documents with this group_id
+                # Only group_id: Find documents with this group_id (but NOT session-specific ones)
+                # These are knowledge base documents that should not have a session_id
                 from qdrant_client.models import Filter, FieldCondition, MatchValue
                 filter_conditions = Filter(
                     must=[
@@ -196,13 +197,21 @@ class VectorStore:
                     ]
                 )
 
-                results = self.client.search(
+                results_raw = self.client.search(
                     collection_name=self.collection_name,
                     query_vector=query_embedding,
                     limit=limit,
                     query_filter=filter_conditions,
                     score_threshold=score_threshold
                 )
+
+                # Filter out documents that have a session_id (those are session-specific, not knowledge base)
+                results = [
+                    r for r in results_raw
+                    if not r.payload.get("session_id") or r.payload.get("session_id") == ""
+                ]
+
+                logger.info(f"Group-only search: {len(results)} knowledge base docs (filtered from {len(results_raw)} total with group_id)")
 
             elif session_id:
                 # Only session_id: Find documents with this session_id
