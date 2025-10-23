@@ -108,32 +108,137 @@ class VectorStore:
         limit: int = 20,
         score_threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
+        """Search for documents with proper group_id and session_id logic.
+
+        Logic:
+        - Documents with group_id (without session_id) = Knowledge base for all sessions with that group_id
+        - Documents with session_id = Additional knowledge sources only for that session
+
+        When both group_id and session_id are provided:
+          Find documents where (group_id = X AND session_id not set) OR (session_id = Y)
+        """
         self._ensure_initialized()
         try:
             query_embedding = await self.embedding_service.embed_query(query)
 
-            filter_conditions = None
-            must_conditions = []
+            # Handle group_id and session_id logic with two searches if needed
+            if group_id and session_id:
+                # Perform two searches and combine results
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-            if user_id:
-                must_conditions.append({"key": "user_id", "match": {"value": user_id}})
+                # Search 1: Documents with group_id (knowledge base - these should not have session_id)
+                # We search for documents with the group_id and let the application filter
+                # Note: In practice, documents with group_id should be ingested WITHOUT session_id
+                filter_group_conditions = [
+                    FieldCondition(key="group_id", match=MatchValue(value=group_id))
+                ]
+                if user_id:
+                    filter_group_conditions.insert(0, FieldCondition(key="user_id", match=MatchValue(value=user_id)))
 
-            if group_id:
-                must_conditions.append({"key": "group_id", "match": {"value": group_id}})
+                filter_group = Filter(must=filter_group_conditions)
 
-            if session_id:
-                must_conditions.append({"key": "session_id", "match": {"value": session_id}})
+                results_group = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    query_filter=filter_group,
+                    score_threshold=score_threshold
+                )
 
-            if must_conditions:
-                filter_conditions = {"must": must_conditions}
+                # Filter out documents that have a session_id in the group results
+                # (they should be session-specific, not knowledge base)
+                filtered_group_results = [
+                    r for r in results_group
+                    if not r.payload.get("session_id") or r.payload.get("session_id") == ""
+                ]
 
-            results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=limit,
-                query_filter=filter_conditions,
-                score_threshold=score_threshold
-            )
+                # Search 2: Documents with session_id
+                filter_session = Filter(
+                    must=[
+                        FieldCondition(key="user_id", match=MatchValue(value=user_id)),
+                        FieldCondition(key="session_id", match=MatchValue(value=session_id))
+                    ] if user_id else [
+                        FieldCondition(key="session_id", match=MatchValue(value=session_id))
+                    ]
+                )
+
+                results_session = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    query_filter=filter_session,
+                    score_threshold=score_threshold
+                )
+
+                # Combine and deduplicate results
+                seen_ids = set()
+                combined_results = []
+                for result in filtered_group_results + list(results_session):
+                    if result.id not in seen_ids:
+                        seen_ids.add(result.id)
+                        combined_results.append(result)
+
+                # Sort by score and limit
+                combined_results.sort(key=lambda x: x.score, reverse=True)
+                results = combined_results[:limit]
+
+                logger.info(f"Combined search: {len(filtered_group_results)} from group (filtered from {len(results_group)}) + {len(results_session)} from session = {len(results)} total")
+
+            elif group_id:
+                # Only group_id: Find documents with this group_id
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
+                filter_conditions = Filter(
+                    must=[
+                        FieldCondition(key="user_id", match=MatchValue(value=user_id)),
+                        FieldCondition(key="group_id", match=MatchValue(value=group_id))
+                    ] if user_id else [
+                        FieldCondition(key="group_id", match=MatchValue(value=group_id))
+                    ]
+                )
+
+                results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    query_filter=filter_conditions,
+                    score_threshold=score_threshold
+                )
+
+            elif session_id:
+                # Only session_id: Find documents with this session_id
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
+                filter_conditions = Filter(
+                    must=[
+                        FieldCondition(key="user_id", match=MatchValue(value=user_id)),
+                        FieldCondition(key="session_id", match=MatchValue(value=session_id))
+                    ] if user_id else [
+                        FieldCondition(key="session_id", match=MatchValue(value=session_id))
+                    ]
+                )
+
+                results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    query_filter=filter_conditions,
+                    score_threshold=score_threshold
+                )
+            else:
+                # No group_id or session_id: Search all user documents
+                filter_conditions = None
+                if user_id:
+                    from qdrant_client.models import Filter, FieldCondition, MatchValue
+                    filter_conditions = Filter(
+                        must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+                    )
+
+                results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    query_filter=filter_conditions,
+                    score_threshold=score_threshold
+                )
 
             documents = []
             for result in results:
@@ -149,6 +254,8 @@ class VectorStore:
 
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     async def delete_by_session(self, session_id: str):
