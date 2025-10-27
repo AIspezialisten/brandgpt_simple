@@ -154,6 +154,7 @@ class IngestionPipeline:
         user_id: int,
         max_depth: Optional[int]
     ):
+        import asyncio
         from brandgpt.models import SessionLocal
 
         # Create a new database session for this background task
@@ -162,46 +163,76 @@ class IngestionPipeline:
             # Update document status
             document = db.query(Document).filter(Document.id == document_id).first()
             if not document:
+                logger.error(f"Document {document_id} not found")
                 return
 
             document.processed = "processing"
             db.commit()
-            
+            logger.info(f"📄 Processing URL: {url} (document_id: {document_id})")
+
             metadata = {
                 "document_id": document_id,
                 "url": url,
                 "session_id": session_id,
                 "max_depth": max_depth
             }
-            
-            # Process URL
-            chunks = await self.url_processor.process(url, metadata)
-            
-            # Store in vector database
-            await self.vector_store.add_documents(
-                documents=chunks, 
-                session_id=session_id, 
-                user_id=user_id, 
-                document_id=document_id,
-                group_id=document.group_id
-            )
-            
+
+            # Step 1: Process URL with timeout (10 minutes total)
+            logger.info(f"1️⃣ Scraping URL: {url}")
+            try:
+                chunks = await asyncio.wait_for(
+                    self.url_processor.process(url, metadata),
+                    timeout=600.0  # 10 minutes for scraping
+                )
+                logger.info(f"✅ Scraped URL successfully: {len(chunks)} chunks")
+            except asyncio.TimeoutError:
+                raise TimeoutError(f"URL scraping timed out after 600 seconds")
+            except Exception as e:
+                logger.error(f"❌ URL scraping failed: {str(e)}")
+                raise
+
+            # Step 2: Store in vector database with timeout (10 minutes total)
+            logger.info(f"2️⃣ Generating embeddings and storing {len(chunks)} chunks")
+            try:
+                await asyncio.wait_for(
+                    self.vector_store.add_documents(
+                        documents=chunks,
+                        session_id=session_id,
+                        user_id=user_id,
+                        document_id=document_id,
+                        group_id=document.group_id
+                    ),
+                    timeout=600.0  # 10 minutes for embeddings
+                )
+                logger.info(f"✅ Stored all chunks in vector database")
+            except asyncio.TimeoutError:
+                raise TimeoutError(f"Embedding generation timed out after 600 seconds")
+            except Exception as e:
+                logger.error(f"❌ Embedding/storage failed: {str(e)}")
+                raise
+
             # Update document status
             document.processed = "completed"
             document.processed_at = datetime.utcnow()
             db.commit()
-            
-            logger.info(f"Successfully processed URL: {url}")
+
+            logger.info(f"✅ Successfully processed URL: {url} (document_id: {document_id})")
 
         except Exception as e:
-            logger.error(f"Error processing URL: {str(e)}")
+            error_msg = str(e)
+            error_type = type(e).__name__
+            logger.error(f"❌ Error processing URL: {error_type}: {error_msg}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             try:
                 document = db.query(Document).filter(Document.id == document_id).first()
                 if document:
                     document.processed = "failed"
-                    document.error_message = str(e)
+                    # Provide more specific error messages
+                    if "TimeoutError" in error_type or "timeout" in error_msg.lower():
+                        document.error_message = f"Timeout: {error_msg}"
+                    else:
+                        document.error_message = f"{error_type}: {error_msg}"
                     db.commit()
             except Exception as db_error:
                 logger.error(f"Failed to update document status: {str(db_error)}")

@@ -99,14 +99,16 @@ class URLScraper:
             
             try:
                 logger.info(f"Scraping URL: {url} (depth: {current_depth}/{self.max_depth})")
-                response = self.session.get(url, timeout=10)
+                response = self.session.get(url, timeout=30)  # Increased from 10 to 30 seconds
                 response.raise_for_status()
-                
+
                 self.visited_urls.add(url)
-                
+                logger.info(f"✅ Successfully fetched {url} ({len(response.content)} bytes)")
+
                 soup = BeautifulSoup(response.content, 'html.parser')
                 self._extract_text(soup, url, current_depth)
-                
+                logger.info(f"✅ Extracted text from {url}")
+
                 # Add links for next depth level (if within limit)
                 if current_depth < self.max_depth:
                     links = self._get_links(soup, url)
@@ -114,12 +116,12 @@ class URLScraper:
                     for link in links[:self.max_links_per_page]:
                         if link not in self.visited_urls:
                             to_visit.append((link, current_depth + 1))
-                
+
                 # Be respectful with delays
                 time.sleep(settings.download_delay)
-                
+
             except Exception as e:
-                logger.warning(f"Error scraping {url}: {str(e)}")
+                logger.error(f"❌ Error scraping {url}: {str(e)} (type: {type(e).__name__})")
                 continue
         
         return self.content
