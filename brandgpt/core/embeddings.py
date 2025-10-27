@@ -10,20 +10,36 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     def __init__(self):
         # Configure longer timeouts for the Ollama client
-        # The default timeout in ollama/httpx is often 120 seconds,
-        # but embedding generation for large batches can take longer
+        # The ollama library default timeout is None (unlimited), but httpx has internal limits
+        # For embedding generation of large batches, we need explicit long timeouts
         from httpx import Timeout
+        from ollama import AsyncClient, Client
 
-        # We use async methods (aembed_documents), so configure async_client_kwargs
         timeout_config = Timeout(300.0)  # 5 minutes timeout for HTTP requests
 
+        # Create ollama clients directly with timeout parameter
+        # The ollama.BaseClient accepts 'timeout' parameter directly
+        async_client = AsyncClient(
+            host=settings.ollama_embedding_url,
+            timeout=timeout_config
+        )
+
+        sync_client = Client(
+            host=settings.ollama_embedding_url,
+            timeout=timeout_config
+        )
+
+        # Create OllamaEmbeddings but replace its clients with our configured ones
         self.embeddings = OllamaEmbeddings(
             base_url=settings.ollama_embedding_url,
             model=settings.ollama_embedding_model,
-            keep_alive=settings.ollama_keep_alive,
-            async_client_kwargs={"timeout": timeout_config},
-            sync_client_kwargs={"timeout": timeout_config}  # Also set for sync, just in case
+            keep_alive=settings.ollama_keep_alive
         )
+
+        # Override the internal clients with our timeout-configured ones
+        self.embeddings._async_client = async_client
+        self.embeddings._client = sync_client
+
         logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}, Timeout: 300s")
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
