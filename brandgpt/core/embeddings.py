@@ -12,10 +12,18 @@ class EmbeddingService:
         # Configure longer timeouts for the Ollama client
         # The ollama library default timeout is None (unlimited), but httpx has internal limits
         # For embedding generation of large batches, we need explicit long timeouts
+        #
+        # The key is the 'read' timeout - this is how long httpx will wait for Ollama
+        # to send response data. Embedding generation can take >90s for large batches.
         from httpx import Timeout
         from ollama import AsyncClient, Client
 
-        timeout_config = Timeout(300.0)  # 5 minutes timeout for HTTP requests
+        # Configure explicit timeouts for all phases:
+        # - connect: 30s (time to establish connection)
+        # - read: 300s (time to read response - CRITICAL for long embedding operations)
+        # - write: 30s (time to send request)
+        # - pool: 30s (time to acquire connection from pool)
+        timeout_config = Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
 
         # Create ollama clients directly with timeout parameter
         # The ollama.BaseClient accepts 'timeout' parameter directly
@@ -40,7 +48,7 @@ class EmbeddingService:
         self.embeddings._async_client = async_client
         self.embeddings._client = sync_client
 
-        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}, Timeout: 300s")
+        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}, Timeout: connect=30s, read=300s")
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
