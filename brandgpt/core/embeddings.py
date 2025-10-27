@@ -9,12 +9,22 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     def __init__(self):
+        # Configure longer timeouts for the Ollama client
+        # The default timeout in ollama/httpx is often 120 seconds,
+        # but embedding generation for large batches can take longer
+        from httpx import Timeout
+
+        client_kwargs = {
+            "timeout": Timeout(300.0),  # 5 minutes timeout for HTTP requests
+        }
+
         self.embeddings = OllamaEmbeddings(
             base_url=settings.ollama_embedding_url,
             model=settings.ollama_embedding_model,
-            keep_alive=settings.ollama_keep_alive
+            keep_alive=settings.ollama_keep_alive,
+            client_kwargs=client_kwargs
         )
-        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}")
+        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}, Timeout: 300s")
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
