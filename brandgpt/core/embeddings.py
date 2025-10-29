@@ -52,48 +52,59 @@ class EmbeddingService:
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
-        Generate embeddings for a list of texts with timeout and batch processing.
+        Generate embeddings for a list of texts with robust batch processing.
 
-        For large batches (>50 texts), processes in smaller batches to avoid timeouts.
-        Each batch has a 300-second timeout.
+        Strategy for avoiding timeouts:
+        - Use small batches (10 chunks) to ensure each request completes quickly
+        - Each batch completes in ~15-30 seconds (well under proxy timeouts)
+        - Progress logging for transparency
+        - Graceful error handling per batch
+
+        This approach is more robust than relying on long timeouts.
         """
         try:
-            # For small batches, process normally
-            if len(texts) <= 50:
-                logger.info(f"Generating embeddings for {len(texts)} documents")
+            # ALWAYS use small batches, even for small numbers of texts
+            # This ensures no single Ollama request takes too long
+            # Batch size of 10 ensures each request completes in ~15-30s
+            batch_size = 10
+
+            # Single text - no batching needed
+            if len(texts) == 1:
+                logger.info(f"Generating embedding for 1 document")
                 embeddings = await asyncio.wait_for(
                     self.embeddings.aembed_documents(texts),
-                    timeout=300.0  # 5 minutes timeout
+                    timeout=60.0  # 1 minute for single embedding
                 )
-                logger.info(f"✅ Generated embeddings for {len(texts)} documents")
+                logger.info(f"✅ Generated embedding for 1 document")
                 return embeddings
 
-            # For large batches, process in chunks
-            logger.info(f"Processing {len(texts)} documents in batches of 50")
+            # Multiple texts - use small batches
+            logger.info(f"📦 Processing {len(texts)} documents in batches of {batch_size}")
             all_embeddings = []
-            batch_size = 50
+            total_batches = (len(texts) + batch_size - 1) // batch_size
 
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i+batch_size]
                 batch_num = i//batch_size + 1
-                total_batches = (len(texts) + batch_size - 1) // batch_size
 
-                logger.info(f"Processing embedding batch {batch_num}/{total_batches} ({len(batch)} texts)")
+                logger.info(f"⚙️  Processing batch {batch_num}/{total_batches} ({len(batch)} texts)")
 
                 try:
+                    # Smaller batches = shorter timeout needed
+                    # 10 chunks should complete in ~15-30 seconds
                     batch_embeddings = await asyncio.wait_for(
                         self.embeddings.aembed_documents(batch),
-                        timeout=300.0  # 5 minutes per batch
+                        timeout=90.0  # 90 seconds per batch (plenty of margin)
                     )
                     all_embeddings.extend(batch_embeddings)
-                    logger.info(f"✅ Batch {batch_num}/{total_batches} completed")
+                    logger.info(f"✅ Batch {batch_num}/{total_batches} completed successfully")
 
-                    # Small pause between batches
+                    # Small pause between batches to avoid overwhelming Ollama
                     if i + batch_size < len(texts):
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.3)
 
                 except asyncio.TimeoutError:
-                    logger.error(f"❌ Embedding batch {batch_num}/{total_batches} timed out after 300s")
+                    logger.error(f"❌ Embedding batch {batch_num}/{total_batches} timed out after 90s")
                     raise TimeoutError(f"Embedding generation timed out for batch {batch_num}/{total_batches}")
                 except Exception as batch_error:
                     logger.error(f"❌ Error in batch {batch_num}/{total_batches}: {str(batch_error)}")
@@ -104,7 +115,7 @@ class EmbeddingService:
 
         except asyncio.TimeoutError:
             logger.error(f"❌ Embedding generation timed out for {len(texts)} documents")
-            raise TimeoutError(f"Embedding generation timed out after 300 seconds")
+            raise TimeoutError(f"Embedding generation timed out (90s per batch)")
         except Exception as e:
             logger.error(f"❌ Error generating embeddings: {str(e)}")
             raise
