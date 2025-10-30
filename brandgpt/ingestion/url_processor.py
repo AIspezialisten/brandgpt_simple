@@ -25,38 +25,65 @@ class URLScraper:
         })
     
     def _extract_text(self, soup, url, depth):
-        """Extract meaningful text content from the page"""
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
-            script.decompose()
-        
+        """Extract meaningful text content from the page, removing navigation/footer/boilerplate"""
+        # Remove script, style, and non-content elements
+        for element in soup(["script", "style", "link", "meta", "noscript", "iframe"]):
+            element.decompose()
+
+        # Aggressively remove navigation, header, footer, sidebar elements
+        # These elements contain menus, links, and boilerplate that inflate chunk count
+        for element in soup.select('nav, header, footer, aside, .nav, .navigation, .navbar, '
+                                   '.menu, .sidebar, .footer, .header, #nav, #navigation, '
+                                   '#navbar, #menu, #sidebar, #footer, #header, '
+                                   '[role="navigation"], [role="banner"], [role="contentinfo"]'):
+            element.decompose()
+
+        # Remove common boilerplate elements
+        for element in soup.select('.cookie, .gdpr, .social, .share, .advertisement, '
+                                   '.ad, .breadcrumb, .tags, .related, .comments'):
+            element.decompose()
+
         # Get title
         title = soup.find('title')
         title_text = title.get_text().strip() if title else ''
-        
+
         # Extract main content (prioritize content areas)
         content_selectors = [
-            'main', 'article', '.content', '#content', '.main-content',
-            '.entry-content', '.post-content', '#main'
+            'main', 'article', '[role="main"]', '.content', '#content',
+            '.main-content', '.entry-content', '.post-content', '#main',
+            '.article-content', '.page-content', '.main-article'
         ]
-        
+
         main_content = None
         for selector in content_selectors:
             main_content = soup.select_one(selector)
             if main_content:
+                logger.info(f"Found main content using selector: {selector}")
                 break
-        
+
         # Fallback to body if no main content area found
         if not main_content:
+            logger.info("No main content selector matched, using body")
             main_content = soup.find('body') or soup
-        
-        # Extract text from paragraphs, headings, and lists
-        text_elements = main_content.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li'])
-        texts = [elem.get_text().strip() for elem in text_elements if elem.get_text().strip()]
-        
+
+        # Extract text from semantic content elements only
+        text_elements = main_content.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'dd', 'dt', 'blockquote'])
+
+        # Filter out empty and very short texts (likely navigation remnants)
+        texts = []
+        seen_texts = set()  # Deduplicate repeated content
+
+        for elem in text_elements:
+            text = elem.get_text().strip()
+            # Filter: must be at least 20 chars and not already seen
+            if len(text) >= 20 and text not in seen_texts:
+                texts.append(text)
+                seen_texts.add(text)
+
         combined_text = ' '.join(texts)
-        
+
         if combined_text.strip():
+            logger.info(f"Extracted {len(texts)} unique text blocks from {url} (total {len(combined_text)} chars)")
             self.content.append({
                 'url': url,
                 'text': combined_text.strip(),
