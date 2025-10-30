@@ -994,14 +994,14 @@ async def list_user_documents(
     return documents
 
 
-@app.get("/api/documents/{document_id}")
+@app.get("/api/document/{document_id}")
 async def get_document_status(
     document_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get detailed status of a specific document.
+    Get detailed status of a specific document by ID.
 
     This endpoint is used for polling the status of asynchronous ingestion jobs.
     Returns document details including processing status, progress, and error messages.
