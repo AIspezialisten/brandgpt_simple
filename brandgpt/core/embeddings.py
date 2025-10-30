@@ -66,11 +66,13 @@ class EmbeddingService:
         This approach is more robust than relying on long timeouts.
         """
         try:
-            # ALWAYS use very small batches to stay under proxy timeouts
-            # Even with proxy_read_timeout 30s, we need batches that complete quickly
-            # Batch size of 5 ensures each request completes in ~10-20s (after cold start)
-            # First batch with cold start: ~30-50s (model loading + 5 embeddings)
-            batch_size = 5
+            # Use larger batch size for faster processing with async ingestion
+            # With async ingestion, no proxy timeout concerns
+            # Batch size of 100 provides good balance:
+            # - Medium docs (369 chunks): 4 batches × ~25s = ~100s ✅
+            # - Large docs (899 chunks): 9 batches × ~25s = ~225s (may hit 150s limit)
+            # This is the best we can do with the observed ~150s timeout
+            batch_size = 100
 
             # Single text - no batching needed
             if len(texts) == 1:
