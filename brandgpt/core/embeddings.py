@@ -20,10 +20,13 @@ class EmbeddingService:
 
         # Configure explicit timeouts for all phases:
         # - connect: 30s (time to establish connection)
-        # - read: 300s (time to read response - CRITICAL for long embedding operations)
+        # - read: 7200s (2 hours - for very large embedding operations)
         # - write: 30s (time to send request)
         # - pool: 30s (time to acquire connection from pool)
-        timeout_config = Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0)
+        #
+        # Note: This timeout is per HTTP request, not total processing time.
+        # With batch size of 5, even 180 batches stay under this limit per request.
+        timeout_config = Timeout(connect=30.0, read=7200.0, write=30.0, pool=30.0)
 
         # Create ollama clients directly with timeout parameter
         # The ollama.BaseClient accepts 'timeout' parameter directly
@@ -48,7 +51,7 @@ class EmbeddingService:
         self.embeddings._async_client = async_client
         self.embeddings._client = sync_client
 
-        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}, Timeout: connect=30s, read=300s")
+        logger.info(f"EmbeddingService initialized with URL: {settings.ollama_embedding_url}, Model: {settings.ollama_embedding_model}, Timeout: connect=30s, read=7200s (2h)")
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -74,7 +77,7 @@ class EmbeddingService:
                 logger.info(f"Generating embedding for 1 document")
                 embeddings = await asyncio.wait_for(
                     self.embeddings.aembed_documents(texts),
-                    timeout=60.0  # 1 minute for single embedding
+                    timeout=300.0  # 5 minutes for single embedding
                 )
                 logger.info(f"✅ Generated embedding for 1 document")
                 return embeddings
@@ -94,9 +97,10 @@ class EmbeddingService:
                     # Very small batches for maximum reliability
                     # 5 chunks should complete in ~10-20 seconds (after cold start)
                     # First batch may take 30-50s with model loading
+                    # Using generous timeout to handle any delays
                     batch_embeddings = await asyncio.wait_for(
                         self.embeddings.aembed_documents(batch),
-                        timeout=60.0  # 60 seconds per batch
+                        timeout=300.0  # 5 minutes per batch (very generous)
                     )
                     all_embeddings.extend(batch_embeddings)
                     logger.info(f"✅ Batch {batch_num}/{total_batches} completed successfully")
