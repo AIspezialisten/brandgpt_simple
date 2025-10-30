@@ -212,10 +212,10 @@ class IngestionPipeline:
 
             # Step 2: Store in vector database with dynamic timeout
             # Calculate timeout based on number of chunks
-            # Batch size is 100, ~30 seconds per batch + 60 second buffer
-            batch_size = 100
+            # Batch size is 10, ~15 seconds per batch + 120 second buffer
+            batch_size = 10
             estimated_batches = (len(chunks) + batch_size - 1) // batch_size
-            embedding_timeout = estimated_batches * 30 + 60
+            embedding_timeout = estimated_batches * 15 + 120
             logger.info(f"2️⃣ Generating embeddings and storing {len(chunks)} chunks")
             logger.info(f"   Estimated batches: {estimated_batches}, Timeout: {embedding_timeout}s ({embedding_timeout//60} minutes)")
             try:

@@ -66,13 +66,13 @@ class EmbeddingService:
         This approach is more robust than relying on long timeouts.
         """
         try:
-            # Use larger batch size for faster processing with async ingestion
-            # With async ingestion, no proxy timeout concerns
-            # Batch size of 100 provides good balance:
-            # - Medium docs (369 chunks): 4 batches × ~25s = ~100s ✅
-            # - Large docs (899 chunks): 9 batches × ~25s = ~225s (may hit 150s limit)
-            # This is the best we can do with the observed ~150s timeout
-            batch_size = 100
+            # Use small batch size for maximum reliability
+            # Testing shows larger batches hit timeout FASTER:
+            # - Batch size 5: timeout at 156s (36 batches processed)
+            # - Batch size 100: timeout at 96s (0-1 batches processed)
+            # Smaller batches process faster individually, allowing more completions
+            # before hitting the cumulative timeout
+            batch_size = 10
 
             # Single text - no batching needed
             if len(texts) == 1:
