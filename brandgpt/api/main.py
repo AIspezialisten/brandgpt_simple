@@ -645,8 +645,7 @@ async def ingest_url(
         document.id,
         data.session_id,
         current_user.id,
-        data.max_depth,
-        data.group_id
+        data.max_depth
     )
 
     return schemas.IngestionStatus(
