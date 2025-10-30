@@ -6,7 +6,7 @@ from .database import Base
 
 class Document(Base):
     __tablename__ = "documents"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Owner of the document
     session_id = Column(String, ForeignKey("sessions.id"), nullable=True)  # Nullable for user-scoped content
@@ -15,9 +15,10 @@ class Document(Base):
     url = Column(String, nullable=True)
     content_type = Column(String, nullable=False)  # pdf, text, url, json
     doc_metadata = Column(JSON, nullable=True)
-    processed = Column(String, default="pending")  # pending, processing, completed, failed
+    processed = Column(String, default="queued")  # queued, processing, completed, failed
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    processed_at = Column(DateTime(timezone=True), nullable=True)
-    
+    started_at = Column(DateTime(timezone=True), nullable=True)  # When processing actually started
+    processed_at = Column(DateTime(timezone=True), nullable=True)  # When processing completed/failed
+
     session = relationship("Session", backref="documents")

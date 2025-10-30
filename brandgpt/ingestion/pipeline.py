@@ -160,13 +160,19 @@ class IngestionPipeline:
         # Create a new database session for this background task
         db = SessionLocal()
         try:
-            # Update document status
+            # Update document status to processing and set started_at
             document = db.query(Document).filter(Document.id == document_id).first()
             if not document:
                 logger.error(f"Document {document_id} not found")
                 return
 
             document.processed = "processing"
+            document.started_at = datetime.utcnow()
+            document.doc_metadata = {
+                **(document.doc_metadata or {}),
+                "phase": "scraping",
+                "progress_percent": 0
+            }
             db.commit()
             logger.info(f"📄 Processing URL: {url} (document_id: {document_id})")
 
@@ -185,6 +191,19 @@ class IngestionPipeline:
                     timeout=600.0  # 10 minutes for scraping
                 )
                 logger.info(f"✅ Scraped URL successfully: {len(chunks)} chunks")
+
+                # Update progress after scraping
+                document = db.query(Document).filter(Document.id == document_id).first()
+                if document:
+                    document.doc_metadata = {
+                        **(document.doc_metadata or {}),
+                        "phase": "embedding",
+                        "progress_percent": 30,
+                        "chunks_total": len(chunks),
+                        "chunks_processed": 0
+                    }
+                    db.commit()
+
             except asyncio.TimeoutError:
                 raise TimeoutError(f"URL scraping timed out after 600 seconds")
             except Exception as e:
@@ -211,10 +230,17 @@ class IngestionPipeline:
                 logger.error(f"❌ Embedding/storage failed: {str(e)}")
                 raise
 
-            # Update document status
-            document.processed = "completed"
-            document.processed_at = datetime.utcnow()
-            db.commit()
+            # Update document status to completed
+            document = db.query(Document).filter(Document.id == document_id).first()
+            if document:
+                document.processed = "completed"
+                document.processed_at = datetime.utcnow()
+                document.doc_metadata = {
+                    **(document.doc_metadata or {}),
+                    "phase": "completed",
+                    "progress_percent": 100
+                }
+                db.commit()
 
             logger.info(f"✅ Successfully processed URL: {url} (document_id: {document_id})")
 
@@ -228,11 +254,18 @@ class IngestionPipeline:
                 document = db.query(Document).filter(Document.id == document_id).first()
                 if document:
                     document.processed = "failed"
+                    document.processed_at = datetime.utcnow()
                     # Provide more specific error messages
                     if "TimeoutError" in error_type or "timeout" in error_msg.lower():
                         document.error_message = f"Timeout: {error_msg}"
                     else:
                         document.error_message = f"{error_type}: {error_msg}"
+                    # Update metadata with error info
+                    document.doc_metadata = {
+                        **(document.doc_metadata or {}),
+                        "phase": "failed",
+                        "error_type": error_type
+                    }
                     db.commit()
             except Exception as db_error:
                 logger.error(f"Failed to update document status: {str(db_error)}")

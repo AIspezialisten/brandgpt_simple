@@ -511,7 +511,7 @@ async def delete_prompt(
 
 
 # Ingestion endpoints
-@app.post("/api/ingest/file", response_model=schemas.IngestionStatus)
+@app.post("/api/ingest/file", response_model=schemas.IngestionStatus, status_code=202)
 async def ingest_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -520,6 +520,12 @@ async def ingest_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Ingest file asynchronously. Returns immediately with 202 Accepted.
+
+    The file will be processed in the background. Poll GET /api/documents/{id}
+    to check the processing status and progress.
+    """
     logger.info(f"=== FILE INGESTION DEBUG ===")
     logger.info(f"User: {current_user.username} (ID: {current_user.id})")
     logger.info(f"File: {file.filename}")
@@ -574,7 +580,7 @@ async def ingest_file(
         tmp.write(content)
         tmp_path = tmp.name
     
-    # Process in background
+    # Process in background (HTTP connection is closed immediately!)
     background_tasks.add_task(
         ingestion_pipeline.process_file_from_path,
         tmp_path,
@@ -583,21 +589,27 @@ async def ingest_file(
         session_id,
         current_user.id
     )
-    
+
     return schemas.IngestionStatus(
         document_id=document.id,
-        status="processing",
-        message="File ingestion started"
+        status="queued",
+        message="File ingestion queued for processing"
     )
 
 
-@app.post("/api/ingest/url", response_model=schemas.IngestionStatus)
+@app.post("/api/ingest/url", response_model=schemas.IngestionStatus, status_code=202)
 async def ingest_url(
     background_tasks: BackgroundTasks,
     data: schemas.DocumentUpload,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Ingest URL asynchronously. Returns immediately with 202 Accepted.
+
+    The URL will be processed in the background. Poll GET /api/documents/{id}
+    to check the processing status and progress.
+    """
     # If session_id is provided, verify it belongs to user
     session = None
     if data.session_id:
@@ -605,40 +617,42 @@ async def ingest_url(
             DBSession.id == data.session_id,
             DBSession.user_id == current_user.id
         ).first()
-        
+
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Session not found"
             )
-    
-    # Create document record
+
+    # Create document record with "queued" status
     document = Document(
         user_id=current_user.id,
         session_id=data.session_id,
         group_id=data.group_id,
         url=data.url,
         content_type="url",
+        processed="queued",  # Explicitly set to queued
         doc_metadata={"max_depth": data.max_depth} if data.max_depth else None
     )
     db.add(document)
     db.commit()
     db.refresh(document)
-    
-    # Process in background
+
+    # Process in background (HTTP connection is closed immediately!)
     background_tasks.add_task(
         ingestion_pipeline.process_url,
         data.url,
         document.id,
         data.session_id,
         current_user.id,
-        data.max_depth
+        data.max_depth,
+        data.group_id
     )
-    
+
     return schemas.IngestionStatus(
         document_id=document.id,
-        status="processing",
-        message="URL ingestion started"
+        status="queued",
+        message="URL ingestion queued for processing"
     )
 
 
@@ -978,6 +992,44 @@ async def list_user_documents(
 
     documents = query.order_by(Document.created_at.desc()).all()
     return documents
+
+
+@app.get("/api/documents/{document_id}")
+async def get_document_status(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed status of a specific document.
+
+    This endpoint is used for polling the status of asynchronous ingestion jobs.
+    Returns document details including processing status, progress, and error messages.
+
+    Status values:
+    - queued: Waiting to be processed
+    - processing: Currently being processed
+    - completed: Successfully completed
+    - failed: Processing failed (see error_message)
+
+    The doc_metadata field contains progress information:
+    - phase: Current processing phase (scraping, embedding, completed, failed)
+    - progress_percent: Percentage complete (0-100)
+    - chunks_total: Total number of chunks to process
+    - chunks_processed: Number of chunks processed so far
+    """
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    return document
 
 
 # Debug endpoints

@@ -58,7 +58,31 @@ def init_db():
 
 def run_migrations():
     """Run database migrations for existing installations"""
-    logger.info("Database migrations completed - all users have API keys")
+    from sqlalchemy import inspect, text
+    from brandgpt.models import SessionLocal
+
+    db = SessionLocal()
+    try:
+        inspector = inspect(engine)
+
+        # Migration: Add started_at column to documents table
+        if 'documents' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('documents')]
+
+            if 'started_at' not in columns:
+                logger.info("Adding 'started_at' column to documents table")
+                db.execute(text(
+                    "ALTER TABLE documents ADD COLUMN started_at TIMESTAMP"
+                ))
+                db.commit()
+                logger.info("✅ Migration: started_at column added")
+
+        logger.info("Database migrations completed")
+    except Exception as e:
+        logger.error(f"Migration error: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
