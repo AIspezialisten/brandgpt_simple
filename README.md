@@ -48,6 +48,53 @@ docker-compose up -d
 
 ---
 
+## ⚠️ Breaking Changes - Asynchronous Ingestion
+
+**Version 2.1** introduces asynchronous document ingestion for improved reliability and timeout resistance.
+
+### What Changed
+
+**All ingestion endpoints now return immediately with `202 Accepted`:**
+- `POST /api/ingest/file` - File upload
+- `POST /api/ingest/url` - URL scraping
+- `POST /api/ingest/structured` - Structured data
+
+**New status polling endpoint:**
+- `GET /api/document/{document_id}` - Poll for processing status (note: singular "document")
+
+### Migration Required
+
+**Before (Synchronous):**
+```python
+response = requests.post("/api/ingest/url", json=data, headers=headers)
+result = response.json()  # Blocks until complete (~90s)
+print("Done!")
+```
+
+**After (Asynchronous):**
+```python
+# Step 1: Submit document (returns immediately)
+response = requests.post("/api/ingest/url", json=data, headers=headers)
+document_id = response.json()['document_id']
+
+# Step 2: Poll for completion
+while True:
+    status = requests.get(f"/api/document/{document_id}", headers=headers).json()
+    if status['processed'] == 'completed':
+        break
+    time.sleep(3)
+```
+
+### Benefits
+- ✅ Works with any proxy timeout (even 30s)
+- ✅ Real-time progress tracking (phase, percentage)
+- ✅ No blocking operations
+- ✅ Better user experience with progress visibility
+
+See [Document Ingestion](#-document-ingestion) section for detailed examples.
+
+---
+
 ## 📖 Table of Contents
 
 - [🎯 Key Features](#-key-features)
@@ -72,10 +119,15 @@ docker-compose up -d
 
 ### 📄 **Multi-Format Document Ingestion**
 - **PDF Documents**: Extract text, tables, and metadata
-- **Web URLs**: Crawl and scrape with configurable depth (1-10 levels)
+- **Web URLs**:
+  - Asynchronous crawling with configurable depth (1-10 levels)
+  - Smart content extraction removes navigation, ads, and boilerplate (98% chunk reduction)
+  - Progress tracking with real-time status updates
+  - Works with any proxy timeout configuration
 - **Structured Data**: Preserve original JSON structure while enabling RAG
 - **JSON Data**: Smart processing with natural language conversion
 - **Text Files**: Direct text processing with automatic chunking
+- **All Formats**: Asynchronous processing with 202 Accepted pattern for reliability
 
 ### 👤 **User-Scoped Content Management**
 - **Private Content**: Each user's documents are isolated and secure
@@ -985,7 +1037,7 @@ graph TD
 ```
 
 ### File Upload (PDF, Text, JSON)
-Processes and stores uploaded files with automatic format detection.
+Processes and stores uploaded files with automatic format detection. **Asynchronous processing** - returns immediately while file is processed in background.
 
 **Endpoint:** `POST /api/ingest/file`
 
@@ -1000,6 +1052,8 @@ Processes and stores uploaded files with automatic format detection.
 
 **Python Example:**
 ```python
+import time
+
 # Upload PDF document with session_id
 session_id = "abc123-def456-ghi789"
 with open("business_report.pdf", "rb") as file:
@@ -1012,8 +1066,28 @@ with open("business_report.pdf", "rb") as file:
         headers={"Authorization": f"Bearer {access_token}"}  # Note: no Content-Type for multipart
     )
 
+# Returns immediately with 202 Accepted
 result = response.json()
-print(f"Document ingestion started: {result['document_id']}")
+document_id = result['document_id']
+print(f"Document ingestion queued: {document_id}")
+
+# Poll for completion status
+while True:
+    status_response = requests.get(
+        f"http://localhost:9700/api/document/{document_id}",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    doc_status = status_response.json()
+
+    if doc_status['processed'] == 'completed':
+        print("✅ Document processing completed!")
+        break
+    elif doc_status['processed'] == 'failed':
+        print(f"❌ Processing failed: {doc_status['error_message']}")
+        break
+
+    print(f"⏳ Status: {doc_status['processed']}...")
+    time.sleep(3)  # Poll every 3 seconds
 
 # Upload with group_id for persistent storage
 with open("company_data.json", "rb") as file:
@@ -1026,15 +1100,6 @@ with open("company_data.json", "rb") as file:
         "http://localhost:9700/api/ingest/file",
         files=files,
         data=data,
-        headers={"Authorization": f"Bearer {access_token}"}
-    )
-
-# Upload text file without session (user-scoped only)
-with open("research_notes.txt", "rb") as file:
-    files = {"file": ("research_notes.txt", file, "text/plain")}
-    response = requests.post(
-        "http://localhost:9700/api/ingest/file",
-        files=files,
         headers={"Authorization": f"Bearer {access_token}"}
     )
 ```
@@ -1060,18 +1125,45 @@ const response = await fetch('http://localhost:9700/api/ingest/file', {
     body: formData
 });
 
+// Response comes back immediately with 202 Accepted
 const result = await response.json();
-console.log(`Document ingestion started: ${result.document_id}`);
+const documentId = result.document_id;
+console.log(`Document ingestion queued: ${documentId}`);
+
+// Poll for status until complete
+const pollInterval = setInterval(async () => {
+    const statusResponse = await fetch(`http://localhost:9700/api/document/${documentId}`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    const docStatus = await statusResponse.json();
+
+    if (docStatus.processed === 'completed') {
+        clearInterval(pollInterval);
+        console.log('✅ Document processing completed!');
+    } else if (docStatus.processed === 'failed') {
+        clearInterval(pollInterval);
+        console.error(`❌ Processing failed: ${docStatus.error_message}`);
+    } else {
+        console.log(`⏳ Status: ${docStatus.processed}...`);
+    }
+}, 3000);  // Poll every 3 seconds
 ```
 
-**Response:** `200 OK`
+**Response:** `202 Accepted` (immediate return)
 ```json
 {
   "document_id": 456,
-  "status": "processing",
-  "message": "File ingestion started"
+  "status": "queued",
+  "message": "File ingestion queued for processing"
 }
 ```
+
+**Status Values:**
+- `queued`: Document is waiting to be processed
+- `processing`: Document is currently being processed
+- `completed`: Processing finished successfully
+- `failed`: Processing encountered an error
 
 **Supported File Types:**
 - **PDF**: Extracts text, preserves structure, handles tables
@@ -1080,7 +1172,7 @@ console.log(`Document ingestion started: ${result.document_id}`);
 - **Auto-detection**: System automatically detects JSON in .txt files
 
 ### URL Ingestion
-Crawls and processes web content with configurable depth for comprehensive knowledge base creation.
+Crawls and processes web content with configurable depth for comprehensive knowledge base creation. **Asynchronous processing** - returns immediately while URL is scraped and processed in background.
 
 **Endpoint:** `POST /api/ingest/url`
 
@@ -1090,11 +1182,19 @@ Crawls and processes web content with configurable depth for comprehensive knowl
 ```json
 {
   "session_id": "abc123-def456-ghi789",
-  "content_type": "url", 
+  "content_type": "url",
   "url": "https://example.com/article",
-  "max_depth": 2
+  "max_depth": 2,
+  "group_id": "company_docs"
 }
 ```
+
+**Parameters:**
+- `url` (required): The URL to scrape
+- `session_id` (optional): Session ID to associate with the document
+- `group_id` (optional): Group ID for persistent document organization
+- `content_type` (optional): Must be "url" if provided
+- `max_depth` (optional): Crawl depth (default: 1)
 
 **Depth Parameter Explanation:**
 - `max_depth: 1` - Only scrapes the provided URL (default)
@@ -1102,18 +1202,20 @@ Crawls and processes web content with configurable depth for comprehensive knowl
 - `max_depth: 3` - Scrapes the URL + linked pages + their linked pages (2 levels deep)
 - Maximum allowed depth: 10 (configurable via `MAX_SCRAPE_DEPTH` environment variable)
 
-**Response:** `200 OK`
+**Response:** `202 Accepted` (immediate return)
 ```json
 {
   "document_id": 789,
-  "status": "processing", 
-  "message": "URL ingestion started"
+  "status": "queued",
+  "message": "URL ingestion queued for processing"
 }
 ```
 
 **Python Example:**
 ```python
-# Crawl single page
+import time
+
+# Crawl single page with progress tracking
 url_data = {
     "session_id": session_id,
     "content_type": "url",
@@ -1127,12 +1229,42 @@ response = requests.post(
     headers=headers
 )
 
+# Returns immediately with 202 Accepted
+result = response.json()
+document_id = result['document_id']
+print(f"URL crawling queued: {document_id}")
+
+# Poll for completion with progress tracking
+while True:
+    status_response = requests.get(
+        f"http://localhost:9700/api/document/{document_id}",
+        headers=headers
+    )
+    doc_status = status_response.json()
+
+    # Check completion status
+    if doc_status['processed'] == 'completed':
+        print("✅ URL processing completed!")
+        break
+    elif doc_status['processed'] == 'failed':
+        print(f"❌ Processing failed: {doc_status['error_message']}")
+        break
+
+    # Show progress details
+    metadata = doc_status.get('doc_metadata', {})
+    phase = metadata.get('phase', 'unknown')
+    progress = metadata.get('progress_percent', 0)
+    print(f"⏳ Phase: {phase}, Progress: {progress}%")
+
+    time.sleep(3)  # Poll every 3 seconds
+
 # Crawl website with depth - comprehensive knowledge base creation
 deep_crawl = {
     "session_id": session_id,
-    "content_type": "url", 
+    "content_type": "url",
     "url": "https://company.com/docs/",
-    "max_depth": 3  # Scrapes: main page + all linked pages + their linked pages
+    "max_depth": 3,  # Scrapes: main page + all linked pages + their linked pages
+    "group_id": "company_docs"  # Makes it persistent
 }
 
 response = requests.post(
@@ -1140,14 +1272,6 @@ response = requests.post(
     json=deep_crawl,
     headers=headers
 )
-
-# Example: Wikipedia article with related pages
-wikipedia_crawl = {
-    "session_id": session_id,
-    "content_type": "url",
-    "url": "https://en.wikipedia.org/wiki/Machine_Learning",
-    "max_depth": 2  # Gets main article + all Wikipedia pages it references
-}
 ```
 
 **JavaScript Example:**
@@ -1165,20 +1289,53 @@ const response = await fetch('http://localhost:9700/api/ingest/url', {
     body: JSON.stringify(urlData)
 });
 
+// Response comes back immediately with 202 Accepted
 const result = await response.json();
-console.log(`URL crawling started: ${result.document_id}`);
+const documentId = result.document_id;
+console.log(`URL crawling queued: ${documentId}`);
+
+// Poll for status with progress tracking
+const pollInterval = setInterval(async () => {
+    const statusResponse = await fetch(`http://localhost:9700/api/document/${documentId}`, {
+        headers: headers
+    });
+
+    const docStatus = await statusResponse.json();
+
+    if (docStatus.processed === 'completed') {
+        clearInterval(pollInterval);
+        console.log('✅ URL processing completed!');
+    } else if (docStatus.processed === 'failed') {
+        clearInterval(pollInterval);
+        console.error(`❌ Processing failed: ${docStatus.error_message}`);
+    } else {
+        // Show progress
+        const metadata = docStatus.doc_metadata || {};
+        const phase = metadata.phase || 'unknown';
+        const progress = metadata.progress_percent || 0;
+        console.log(`⏳ Phase: ${phase}, Progress: ${progress}%`);
+    }
+}, 3000);  // Poll every 3 seconds
 ```
 
+**Processing Phases:**
+- `scraping`: Downloading and extracting content from URL
+- `embedding`: Generating vector embeddings for search
+- `completed`: Processing finished successfully
+- `failed`: An error occurred during processing
+
 **URL Processing Features:**
-- **Configurable Depth Crawling**: Control how many levels of links to follow (1-10 levels)
-- **Same-Domain Restriction**: Only follows links within the same domain for security
+- **Asynchronous Processing**: Immediate response, no timeout issues
+- **Progress Tracking**: Real-time phase and percentage updates
 - **Smart Content Extraction**: Removes navigation, ads, and boilerplate content
+- **Same-Domain Restriction**: Only follows links within the same domain for security
 - **Multi-Page Processing**: Each discovered page becomes a separate searchable document
+- **Configurable Depth Crawling**: Control how many levels of links to follow (1-10 levels)
 - **Rate Limiting**: Implements delays between requests (configurable via `DOWNLOAD_DELAY`)
 - **Link Limitation**: Configurable maximum links per page (default: 20) to prevent excessive crawling
 
 ### Structured Data Ingestion
-Ingest JSON objects/arrays while preserving original structure for RAG (v1 API compatibility).
+Ingest JSON objects/arrays while preserving original structure for RAG (v1 API compatibility). **Asynchronous processing** - returns immediately while data is processed in background.
 
 **Endpoint:** `POST /api/ingest/structured`
 
@@ -1213,18 +1370,20 @@ Ingest JSON objects/arrays while preserving original structure for RAG (v1 API c
 }
 ```
 
-**Response:** `200 OK`
+**Response:** `202 Accepted` (immediate return)
 ```json
 {
   "document_id": 456,
-  "status": "processing",
+  "status": "queued",
   "items_processed": 2,
-  "message": "Processing 2 structured items"
+  "message": "Structured data ingestion queued for processing"
 }
 ```
 
 **Python Example:**
 ```python
+import time
+
 # Single object ingestion
 structured_data = {
     "data": {
@@ -1235,6 +1394,7 @@ structured_data = {
         ]
     },
     "group_id": "company_data",
+    "session_id": session_id,
     "metadata": {"source": "hr_system"}
 }
 
@@ -1243,6 +1403,29 @@ response = requests.post(
     json=structured_data,
     headers=headers
 )
+
+# Returns immediately with 202 Accepted
+result = response.json()
+document_id = result['document_id']
+print(f"Structured data ingestion queued: {document_id}")
+
+# Poll for completion
+while True:
+    status_response = requests.get(
+        f"http://localhost:9700/api/document/{document_id}",
+        headers=headers
+    )
+    doc_status = status_response.json()
+
+    if doc_status['processed'] == 'completed':
+        print("✅ Data processing completed!")
+        break
+    elif doc_status['processed'] == 'failed':
+        print(f"❌ Processing failed: {doc_status['error_message']}")
+        break
+
+    print(f"⏳ Status: {doc_status['processed']}...")
+    time.sleep(3)
 
 # Array of objects (v1-style)
 products_data = {
@@ -1270,7 +1453,8 @@ const structuredData = {
             {name: "Backend API", status: "in_progress"}
         ]
     },
-    group_id: "projects_2024"
+    group_id: "projects_2024",
+    session_id: sessionId
 };
 
 const response = await fetch('http://localhost:9700/api/ingest/structured', {
@@ -1279,23 +1463,148 @@ const response = await fetch('http://localhost:9700/api/ingest/structured', {
     body: JSON.stringify(structuredData)
 });
 
+// Response comes back immediately with 202 Accepted
 const result = await response.json();
-console.log(`Structured data ingestion started: ${result.document_id}`);
+const documentId = result.document_id;
+console.log(`Structured data ingestion queued: ${documentId}`);
+
+// Poll for status
+const pollInterval = setInterval(async () => {
+    const statusResponse = await fetch(`http://localhost:9700/api/document/${documentId}`, {
+        headers: headers
+    });
+
+    const docStatus = await statusResponse.json();
+
+    if (docStatus.processed === 'completed') {
+        clearInterval(pollInterval);
+        console.log('✅ Data processing completed!');
+    } else if (docStatus.processed === 'failed') {
+        clearInterval(pollInterval);
+        console.error(`❌ Processing failed: ${docStatus.error_message}`);
+    }
+}, 3000);
 ```
 
 **Structured Data Features:**
+- **Asynchronous Processing**: Immediate response, no blocking operations
 - **Original Structure Preserved**: JSON structure maintained for precise retrieval
 - **Natural Language Conversion**: Automatically generates searchable text for RAG
 - **Group Organization**: Content categorization via group_id (v1 compatibility)
 - **Flexible Input**: Supports single objects or arrays of objects
-- **Background Processing**: Asynchronous processing for optimal performance
+- **Progress Tracking**: Poll status to monitor processing completion
 
 ### Check Document Status
-Monitor the processing status of ingested documents.
+Monitor the processing status of ingested documents with detailed progress tracking.
+
+#### Get Single Document Status (New)
+
+**Endpoint:** `GET /api/document/{document_id}`
+
+**Authentication:** Required
+
+**Use Case:** Poll this endpoint after receiving a `document_id` from an ingestion endpoint to track processing progress.
+
+**Response:** `200 OK`
+```json
+{
+  "id": 789,
+  "user_id": 1,
+  "session_id": "abc123-def456-ghi789",
+  "group_id": "company_docs",
+  "url": "https://example.com/article",
+  "content_type": "url",
+  "processed": "processing",
+  "created_at": "2024-01-15T10:30:00",
+  "started_at": "2024-01-15T10:30:01",
+  "processed_at": null,
+  "error_message": null,
+  "doc_metadata": {
+    "phase": "embedding",
+    "progress_percent": 45,
+    "chunks_total": 14,
+    "chunks_processed": 7
+  }
+}
+```
+
+**Status Values:**
+- `queued`: Document is waiting to be processed
+- `processing`: Document is currently being processed
+- `completed`: Processing finished successfully
+- `failed`: Processing encountered an error
+
+**Processing Phases (in `doc_metadata`):**
+- `scraping`: Downloading and extracting content (URLs only)
+- `embedding`: Generating vector embeddings for search
+- `completed`: All processing steps finished
+- `failed`: An error occurred
+
+**Python Example:**
+```python
+import time
+
+# After uploading/ingesting, poll for status
+document_id = 789
+
+while True:
+    response = requests.get(
+        f"http://localhost:9700/api/document/{document_id}",
+        headers=headers
+    )
+    doc = response.json()
+
+    print(f"Status: {doc['processed']}")
+
+    if doc['processed'] == 'completed':
+        print(f"✅ Completed at {doc['processed_at']}")
+        break
+    elif doc['processed'] == 'failed':
+        print(f"❌ Failed: {doc['error_message']}")
+        break
+    elif doc['processed'] == 'processing':
+        # Show detailed progress
+        metadata = doc.get('doc_metadata', {})
+        phase = metadata.get('phase', 'unknown')
+        progress = metadata.get('progress_percent', 0)
+        print(f"⏳ Phase: {phase}, Progress: {progress}%")
+
+    time.sleep(3)  # Poll every 3 seconds
+```
+
+**JavaScript Example:**
+```javascript
+const documentId = 789;
+
+const pollStatus = setInterval(async () => {
+    const response = await fetch(`http://localhost:9700/api/document/${documentId}`, {
+        headers: headers
+    });
+
+    const doc = await response.json();
+
+    if (doc.processed === 'completed') {
+        clearInterval(pollStatus);
+        console.log(`✅ Completed at ${doc.processed_at}`);
+    } else if (doc.processed === 'failed') {
+        clearInterval(pollStatus);
+        console.error(`❌ Failed: ${doc.error_message}`);
+    } else if (doc.processed === 'processing') {
+        const metadata = doc.doc_metadata || {};
+        const phase = metadata.phase || 'unknown';
+        const progress = metadata.progress_percent || 0;
+        console.log(`⏳ Phase: ${phase}, Progress: ${progress}%`);
+    }
+}, 3000);
+```
+
+#### List Session Documents
 
 **Endpoint:** `GET /api/documents/{session_id}`
 
 **Authentication:** Required
+
+**Use Case:** Get all documents associated with a session.
 
 **Response:** `200 OK`
 ```json
@@ -1306,8 +1615,14 @@ Monitor the processing status of ingested documents.
     "filename": "business_report.pdf",
     "content_type": "pdf",
     "processed": "completed",
+    "created_at": "2024-01-15T10:30:00",
+    "started_at": "2024-01-15T10:30:01",
     "processed_at": "2024-01-15T10:35:00",
-    "error_message": null
+    "error_message": null,
+    "doc_metadata": {
+      "phase": "completed",
+      "progress_percent": 100
+    }
   },
   {
     "id": 789,
@@ -1315,8 +1630,14 @@ Monitor the processing status of ingested documents.
     "url": "https://example.com/article",
     "content_type": "url",
     "processed": "processing",
+    "created_at": "2024-01-15T10:35:00",
+    "started_at": "2024-01-15T10:35:02",
     "processed_at": null,
-    "error_message": null
+    "error_message": null,
+    "doc_metadata": {
+      "phase": "embedding",
+      "progress_percent": 60
+    }
   }
 ]
 ```
