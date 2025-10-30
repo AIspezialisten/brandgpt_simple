@@ -210,8 +210,14 @@ class IngestionPipeline:
                 logger.error(f"❌ URL scraping failed: {str(e)}")
                 raise
 
-            # Step 2: Store in vector database with timeout (10 minutes total)
+            # Step 2: Store in vector database with dynamic timeout
+            # Calculate timeout based on number of chunks
+            # Batch size is 5, ~20 seconds per batch + 120 second buffer
+            batch_size = 5
+            estimated_batches = (len(chunks) + batch_size - 1) // batch_size
+            embedding_timeout = estimated_batches * 20 + 120
             logger.info(f"2️⃣ Generating embeddings and storing {len(chunks)} chunks")
+            logger.info(f"   Estimated batches: {estimated_batches}, Timeout: {embedding_timeout}s ({embedding_timeout//60} minutes)")
             try:
                 await asyncio.wait_for(
                     self.vector_store.add_documents(
@@ -221,11 +227,11 @@ class IngestionPipeline:
                         document_id=document_id,
                         group_id=document.group_id
                     ),
-                    timeout=600.0  # 10 minutes for embeddings
+                    timeout=embedding_timeout
                 )
                 logger.info(f"✅ Stored all chunks in vector database")
             except asyncio.TimeoutError:
-                raise TimeoutError(f"Embedding generation timed out after 600 seconds")
+                raise TimeoutError(f"Embedding generation timed out after {embedding_timeout} seconds")
             except Exception as e:
                 logger.error(f"❌ Embedding/storage failed: {str(e)}")
                 raise
