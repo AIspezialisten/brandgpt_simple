@@ -41,6 +41,11 @@ app.add_middleware(
 ingestion_pipeline = IngestionPipeline()
 rag_graph = RAGGraph()
 
+# Initialize shared vector store to prevent resource leaks
+# Each background task should reuse this instance instead of creating new ones
+from brandgpt.core.vector_store import VectorStore
+vector_store = VectorStore()
+
 
 @app.get("/health")
 async def health_check():
@@ -713,6 +718,7 @@ async def ingest_structured_data(
     items_count = len(data.data) if isinstance(data.data, list) else 1
     
     # Process in background for better performance
+    # Pass the shared vector_store to prevent resource leaks
     background_tasks.add_task(
         process_structured_data_task,
         processor,
@@ -720,7 +726,8 @@ async def ingest_structured_data(
         document.id,
         session_id,
         current_user.id,
-        data.group_id
+        data.group_id,
+        vector_store  # Pass shared instance
     )
     
     return schemas.StructuredDataResponse(
@@ -737,9 +744,14 @@ async def process_structured_data_task(
     document_id: int,
     session_id: Optional[str],
     user_id: int,
-    group_id: Optional[str]
+    group_id: Optional[str],
+    vector_store_instance: VectorStore  # Accept shared instance
 ):
-    """Background task to process structured data with batch processing for large datasets."""
+    """Background task to process structured data with batch processing for large datasets.
+
+    IMPORTANT: Uses shared vector_store_instance to prevent resource leaks.
+    Creating new VectorStore instances for each task causes connection pool exhaustion.
+    """
     from brandgpt.models import SessionLocal
     import asyncio
 
@@ -763,11 +775,7 @@ async def process_structured_data_task(
         if documents:
             logger.info(f"Processing {total_docs} documents in batches of {BATCH_SIZE}")
 
-            # Store in vector database with batch processing
-            from brandgpt.core.vector_store import VectorStore
-            vector_store = VectorStore()
-
-            # Process in batches
+            # Process in batches using the shared vector_store_instance
             for batch_start in range(0, total_docs, BATCH_SIZE):
                 batch_end = min(batch_start + BATCH_SIZE, total_docs)
                 batch = documents[batch_start:batch_end]
@@ -775,7 +783,7 @@ async def process_structured_data_task(
                 logger.info(f"Processing batch {batch_start//BATCH_SIZE + 1}/{(total_docs + BATCH_SIZE - 1)//BATCH_SIZE}: items {batch_start+1}-{batch_end}")
 
                 try:
-                    await vector_store.add_documents(
+                    await vector_store_instance.add_documents(
                         documents=batch,
                         session_id=session_id,
                         user_id=user_id,
