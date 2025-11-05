@@ -31,6 +31,9 @@ class Settings(BaseSettings):
         default="sqlite:///./data/brandgpt.db",
         env="DATABASE_URL"
     )
+    db_pool_size: int = Field(default=20, env="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=30, env="DB_MAX_OVERFLOW")
+    db_pool_recycle: int = Field(default=3600, env="DB_POOL_RECYCLE")
     
     # API Configuration
     api_host: str = Field(default="0.0.0.0", env="API_HOST")
